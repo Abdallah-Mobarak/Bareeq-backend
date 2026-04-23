@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "checkJs": false,
+    "baseUrl": ".",
+    "paths": {
+      "#config/*": ["src/config/*"],
+      "#utils/*": ["src/utils/*"],
+      "#middlewares/*": ["src/middlewares/*"],
+      "#modules/*": ["src/modules/*"],
+      "#infrastructure/*": ["src/infrastructure/*"],
+      "#routes/*": ["src/routes/*"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "logs"]
+}
