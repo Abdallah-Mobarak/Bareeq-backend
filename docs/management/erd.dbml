@@ -1,0 +1,647 @@
+// =============================================================
+// Bareeq Management System — Entity Relationship Diagram (ERD)
+// =============================================================
+// Format: DBML (Database Markup Language)
+// Render: paste this entire file into https://dbdiagram.io
+//
+// Scope: covers all 12 domains of the Management System.
+// Field types here are illustrative — the Prisma schema is the
+// source of truth for actual types and constraints.
+// =============================================================
+
+Project bareeq_management {
+  database_type: 'PostgreSQL'
+  Note: '''
+    Bareeq Management System
+    See docs/management/domain-map.md for design rationale.
+  '''
+}
+
+// =============================================================
+// ENUMS
+// =============================================================
+
+Enum system_role {
+  ADMIN
+  MANAGER
+  SUPERVISOR
+  COMPANY_USER
+}
+
+Enum user_status {
+  ENABLED
+  BLOCKED
+}
+
+Enum visit_status {
+  REMAINING
+  UNDERWAY
+  IMPLEMENTED
+  NOT_IMPLEMENTED
+  FINAL_CLOSED
+}
+
+Enum documentation_status {
+  DOCUMENTED
+  UNDOCUMENTED
+}
+
+Enum task_completion {
+  DONE
+  NOT_DONE
+}
+
+Enum admin_task_status {
+  DONE
+  NOT_DONE
+}
+
+Enum contact_message_status {
+  UNREAD
+  READ
+  REPLIED
+}
+
+Enum audit_action {
+  CREATE
+  UPDATE
+  DELETE
+  STATUS_CHANGE
+}
+
+// =============================================================
+// DOMAIN 1 — IDENTITY & ACCESS
+// =============================================================
+
+Table users {
+  id varchar [pk]
+  email varchar [unique, not null]
+  phone varchar [unique]
+  password varchar [not null]
+  role system_role [not null]
+  status user_status [not null, default: 'ENABLED']
+  name_ar varchar [not null]
+  name_en varchar
+  permission_role_id varchar
+  company_id varchar  // only set when role = COMPANY_USER
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+  deleted_at timestamp
+
+  Indexes {
+    role
+    deleted_at
+  }
+}
+
+Table permission_roles {
+  id varchar [pk]
+  name varchar [not null]
+  description varchar
+  applies_to system_role [not null]  // ADMIN or MANAGER only
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+  deleted_at timestamp
+}
+
+Table permissions {
+  id varchar [pk]
+  key varchar [unique, not null]    // e.g. 'MANAGE_SUPERVISORS'
+  description_ar varchar [not null]
+  description_en varchar
+  module varchar [not null]          // e.g. 'supervisors'
+}
+
+Table permission_role_permissions {
+  permission_role_id varchar [not null]
+  permission_id varchar [not null]
+
+  Indexes {
+    (permission_role_id, permission_id) [pk]
+  }
+}
+
+Table refresh_tokens {
+  id varchar [pk]
+  user_id varchar [not null]
+  token_hash varchar [unique, not null]
+  device_info varchar
+  expires_at timestamp [not null]
+  created_at timestamp [not null, default: `now()`]
+  revoked_at timestamp
+
+  Indexes {
+    user_id
+    expires_at
+  }
+}
+
+Ref: users.permission_role_id > permission_roles.id
+Ref: permission_role_permissions.permission_role_id > permission_roles.id
+Ref: permission_role_permissions.permission_id > permissions.id
+Ref: refresh_tokens.user_id > users.id
+
+// =============================================================
+// DOMAIN 2 — CATALOG
+// =============================================================
+
+Table regions {
+  id varchar [pk]
+  name_ar varchar [not null]
+  name_en varchar
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+  deleted_at timestamp
+}
+
+Table cities {
+  id varchar [pk]
+  region_id varchar [not null]
+  name_ar varchar [not null]
+  name_en varchar
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+  deleted_at timestamp
+}
+
+Table not_implemented_reasons {
+  id varchar [pk]
+  title_ar varchar [not null]
+  title_en varchar
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+  deleted_at timestamp
+}
+
+Table categories {
+  id varchar [pk]
+  name_ar varchar [not null]
+  name_en varchar
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+  deleted_at timestamp
+}
+
+Ref: cities.region_id > regions.id
+
+// =============================================================
+// DOMAIN 3 — COMPANIES & BRANCHES
+// =============================================================
+
+Table companies {
+  id varchar [pk]
+  name_ar varchar [not null]
+  name_en varchar
+  contact_email varchar
+  contact_phone varchar
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+  deleted_at timestamp
+}
+
+Table branches {
+  id varchar [pk]
+  company_id varchar [not null]
+  category_id varchar
+  region_id varchar [not null]
+  city_id varchar [not null]
+  name_ar varchar [not null]
+  name_en varchar
+  branch_number varchar
+  code varchar
+  address_ar varchar
+  address_en varchar
+  latitude decimal
+  longitude decimal
+  visits_per_month int [not null, default: 1]  // 1..4
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+  deleted_at timestamp
+
+  Indexes {
+    company_id
+    region_id
+    city_id
+    code
+  }
+}
+
+Table branch_required_tasks {
+  id varchar [pk]
+  branch_id varchar [not null]
+  visit_type int [not null]            // 1..4 corresponds to V1..V4
+  title_ar varchar [not null]
+  title_en varchar
+  sort_order int [not null, default: 0]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+  deleted_at timestamp
+
+  Indexes {
+    (branch_id, visit_type)
+  }
+}
+
+Ref: branches.company_id > companies.id
+Ref: branches.category_id > categories.id
+Ref: branches.region_id > regions.id
+Ref: branches.city_id > cities.id
+Ref: users.company_id > companies.id
+Ref: branch_required_tasks.branch_id > branches.id
+
+// =============================================================
+// DOMAIN 4 — SCHEDULING
+// =============================================================
+
+Table monthly_schedules {
+  id varchar [pk]
+  supervisor_id varchar [not null]
+  year int [not null]
+  month int [not null]            // 1..12
+  published_at timestamp
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+  deleted_at timestamp
+
+  Indexes {
+    (supervisor_id, year, month) [unique]
+  }
+}
+
+Table scheduled_visits {
+  id varchar [pk]
+  monthly_schedule_id varchar [not null]
+  branch_id varchar [not null]
+  visit_type int [not null]            // 1..4
+  scheduled_date date [not null]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+  deleted_at timestamp
+
+  Indexes {
+    monthly_schedule_id
+    branch_id
+    scheduled_date
+    (monthly_schedule_id, branch_id, visit_type) [unique]
+  }
+}
+
+Ref: monthly_schedules.supervisor_id > users.id
+Ref: scheduled_visits.monthly_schedule_id > monthly_schedules.id
+Ref: scheduled_visits.branch_id > branches.id
+
+// =============================================================
+// DOMAIN 5 — VISIT EXECUTION
+// =============================================================
+
+Table visits {
+  id varchar [pk]
+
+  // Polymorphic owner: exactly one of these is set
+  scheduled_visit_id varchar [unique]
+  additional_task_id varchar [unique]
+
+  status visit_status [not null, default: 'REMAINING']
+  documentation_status documentation_status [not null, default: 'UNDOCUMENTED']
+
+  not_implemented_reason_id varchar  // only when status = NOT_IMPLEMENTED
+
+  // Recorded automatically when supervisor starts/ends the visit
+  started_at timestamp
+  ended_at timestamp
+  duration_seconds int
+
+  // GPS at start
+  start_latitude decimal
+  start_longitude decimal
+
+  // For OTP-based documentation
+  branch_manager_phone varchar
+
+  // Final-closed cascade marker — set when this visit was auto-created
+  // because an earlier visit was marked FINAL_CLOSED
+  cascaded_from_visit_id varchar
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+  deleted_at timestamp
+
+  Indexes {
+    status
+    documentation_status
+  }
+}
+
+Table visit_photos {
+  id varchar [pk]
+  visit_id varchar [not null]
+  cloudinary_public_id varchar [not null]
+  url varchar [not null]
+  uploaded_at timestamp [not null, default: `now()`]
+  deleted_at timestamp
+
+  Indexes {
+    visit_id
+  }
+}
+
+Table visit_task_completions {
+  id varchar [pk]
+  visit_id varchar [not null]
+  branch_required_task_id varchar [not null]
+  status task_completion [not null]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+
+  Indexes {
+    (visit_id, branch_required_task_id) [unique]
+  }
+}
+
+Table visit_documentations {
+  id varchar [pk]
+  visit_id varchar [unique, not null]
+  job_number varchar
+  rating int          // 1..5
+  comments text
+  otp_used varchar    // last 4 digits or hash, for audit
+  documented_at timestamp [not null, default: `now()`]
+}
+
+Ref: visits.scheduled_visit_id > scheduled_visits.id
+Ref: visits.not_implemented_reason_id > not_implemented_reasons.id
+Ref: visits.cascaded_from_visit_id > visits.id
+Ref: visit_photos.visit_id > visits.id
+Ref: visit_task_completions.visit_id > visits.id
+Ref: visit_task_completions.branch_required_task_id > branch_required_tasks.id
+Ref: visit_documentations.visit_id > visits.id
+
+// =============================================================
+// DOMAIN 6 — ADDITIONAL TASKS
+// =============================================================
+
+Table additional_tasks {
+  id varchar [pk]
+  assigned_by_manager_id varchar [not null]
+  assigned_to_supervisor_id varchar [not null]
+  branch_id varchar [not null]
+  scheduled_date date [not null]
+  price decimal
+  notes text
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+  deleted_at timestamp
+
+  Indexes {
+    assigned_to_supervisor_id
+    scheduled_date
+  }
+}
+
+Ref: additional_tasks.assigned_by_manager_id > users.id
+Ref: additional_tasks.assigned_to_supervisor_id > users.id
+Ref: additional_tasks.branch_id > branches.id
+Ref: visits.additional_task_id > additional_tasks.id
+
+// =============================================================
+// DOMAIN 7 — NOTIFICATIONS
+// =============================================================
+
+Table notifications {
+  id varchar [pk]
+  title_ar varchar [not null]
+  title_en varchar
+  body_ar text
+  body_en text
+  category varchar           // 'visit', 'schedule', 'system', 'broadcast'
+  metadata json              // entity refs, link targets
+  created_at timestamp [not null, default: `now()`]
+}
+
+Table notification_recipients {
+  id varchar [pk]
+  notification_id varchar [not null]
+  user_id varchar [not null]
+  read_at timestamp
+
+  Indexes {
+    (notification_id, user_id) [unique]
+    (user_id, read_at)
+  }
+}
+
+Table notification_tokens {
+  id varchar [pk]
+  user_id varchar [not null]
+  fcm_token varchar [unique, not null]
+  device_info varchar
+  created_at timestamp [not null, default: `now()`]
+  last_seen_at timestamp
+
+  Indexes {
+    user_id
+  }
+}
+
+Ref: notification_recipients.notification_id > notifications.id
+Ref: notification_recipients.user_id > users.id
+Ref: notification_tokens.user_id > users.id
+
+// =============================================================
+// DOMAIN 8 — SALES
+// =============================================================
+
+Table contract_types {
+  id varchar [pk]
+  name_ar varchar [not null]
+  name_en varchar
+  created_at timestamp [not null, default: `now()`]
+  deleted_at timestamp
+}
+
+Table tax_types {
+  id varchar [pk]
+  name_ar varchar [not null]
+  name_en varchar
+  rate_percent decimal
+  created_at timestamp [not null, default: `now()`]
+  deleted_at timestamp
+}
+
+Table contract_statuses {
+  id varchar [pk]
+  name_ar varchar [not null]
+  name_en varchar
+  created_at timestamp [not null, default: `now()`]
+  deleted_at timestamp
+}
+
+Table sales_clients {
+  id varchar [pk]
+  manager_id varchar [not null]
+  name varchar [not null]
+  contract_type_id varchar [not null]
+  tax_type_id varchar [not null]
+  contract_status_id varchar [not null]
+  statement text
+  website varchar
+  price decimal
+  contract_date date
+  notes text
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+  deleted_at timestamp
+
+  Indexes {
+    manager_id
+  }
+}
+
+Ref: sales_clients.manager_id > users.id
+Ref: sales_clients.contract_type_id > contract_types.id
+Ref: sales_clients.tax_type_id > tax_types.id
+Ref: sales_clients.contract_status_id > contract_statuses.id
+
+// =============================================================
+// DOMAIN 9 — FLEET (CARS)
+// =============================================================
+
+Table areas {
+  id varchar [pk]
+  name_ar varchar [not null]
+  name_en varchar
+  created_at timestamp [not null, default: `now()`]
+  deleted_at timestamp
+}
+
+Table license_plates {
+  id varchar [pk]
+  plate_number varchar [unique, not null]
+  created_at timestamp [not null, default: `now()`]
+  deleted_at timestamp
+}
+
+Table vehicle_conditions {
+  id varchar [pk]
+  name_ar varchar [not null]
+  name_en varchar
+  created_at timestamp [not null, default: `now()`]
+  deleted_at timestamp
+}
+
+Table car_cases {
+  id varchar [pk]
+  manager_id varchar [not null]
+  supervisor_id varchar [not null]
+  area_id varchar [not null]
+  license_plate_id varchar [not null]
+  vehicle_condition_id varchar [not null]
+  oil_change_date date
+  notes text
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+  deleted_at timestamp
+
+  Indexes {
+    supervisor_id
+  }
+}
+
+Ref: car_cases.manager_id > users.id
+Ref: car_cases.supervisor_id > users.id
+Ref: car_cases.area_id > areas.id
+Ref: car_cases.license_plate_id > license_plates.id
+Ref: car_cases.vehicle_condition_id > vehicle_conditions.id
+
+// =============================================================
+// DOMAIN 10 — REPRESENTATIVES
+// =============================================================
+
+Table service_types {
+  id varchar [pk]
+  name_ar varchar [not null]
+  name_en varchar
+  hourly_rate decimal [not null]
+  created_at timestamp [not null, default: `now()`]
+  deleted_at timestamp
+}
+
+Table representatives {
+  id varchar [pk]
+  manager_id varchar [not null]
+  client_name varchar [not null]
+  service_type_id varchar [not null]
+  num_workers int [not null]
+  num_hours int [not null]
+  price_snapshot decimal [not null]   // computed at creation, frozen
+  agreement_date date [not null]
+  customer_phone varchar
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+  deleted_at timestamp
+
+  Indexes {
+    manager_id
+  }
+}
+
+Ref: representatives.manager_id > users.id
+Ref: representatives.service_type_id > service_types.id
+
+// =============================================================
+// DOMAIN 11 — ADMIN OPERATIONS
+// =============================================================
+
+Table admin_tasks {
+  id varchar [pk]
+  assigned_by_admin_id varchar [not null]
+  assigned_to_manager_id varchar [not null]
+  title varchar [not null]
+  description text
+  status admin_task_status [not null, default: 'NOT_DONE']
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+  deleted_at timestamp
+}
+
+Table contact_messages {
+  id varchar [pk]
+  sender_user_id varchar [not null]
+  email varchar [not null]
+  phone varchar
+  message text [not null]
+  status contact_message_status [not null, default: 'UNREAD']
+  reply text
+  replied_by_admin_id varchar
+  replied_at timestamp
+  created_at timestamp [not null, default: `now()`]
+}
+
+Ref: admin_tasks.assigned_by_admin_id > users.id
+Ref: admin_tasks.assigned_to_manager_id > users.id
+Ref: contact_messages.sender_user_id > users.id
+Ref: contact_messages.replied_by_admin_id > users.id
+
+// =============================================================
+// DOMAIN 12 — AUDIT
+// =============================================================
+
+Table audit_logs {
+  id varchar [pk]
+  entity_type varchar [not null]      // 'visit', 'user', 'sales_client', etc.
+  entity_id varchar [not null]
+  action audit_action [not null]
+  actor_user_id varchar
+  before_json json
+  after_json json
+  metadata json
+  created_at timestamp [not null, default: `now()`]
+
+  Indexes {
+    (entity_type, entity_id)
+    actor_user_id
+    created_at
+  }
+}
+
+Ref: audit_logs.actor_user_id > users.id
