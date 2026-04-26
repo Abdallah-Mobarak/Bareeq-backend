@@ -15,12 +15,138 @@ datasource db {
 }
 
 // ============================================
-// MODELS
+// ENUMS
+// ============================================
+
+/// The system-level role of an account. Distinct from PermissionRole,
+/// which is the dynamic, per-organisation role the admin defines.
+enum SystemRole {
+  ADMIN
+  MANAGER
+  SUPERVISOR
+  COMPANY_USER
+}
+
+/// Whether the account can log in. Admin-controlled.
+enum UserStatus {
+  ENABLED
+  BLOCKED
+}
+
+// ============================================
+// IDENTITY & ACCESS — Phase 1
 // ============================================
 // Naming conventions used throughout this schema:
 //   - Model names: PascalCase, singular (User, not Users)
 //   - Field names: camelCase in code, snake_case in DB via @map
 //   - Table names: snake_case plural via @@map
+// ============================================
+
+/// Every account in the platform — admins, managers, supervisors,
+/// and company users — lives in this single table. Role-specific
+/// behaviour is decided at the service layer based on `role`.
+model User {
+  id       String     @id @default(cuid())
+  email    String     @unique
+  phone    String?    @unique
+  password String // bcrypt hash, never plaintext
+  role     SystemRole
+  status   UserStatus @default(ENABLED)
+
+  // Bilingual display name
+  nameAr String  @map("name_ar")
+  nameEn String? @map("name_en")
+
+  // Optional dynamic permission role (only meaningful for ADMIN / MANAGER).
+  // Supervisors and company users have fixed capabilities and leave this NULL.
+  permissionRoleId String?         @map("permission_role_id")
+  permissionRole   PermissionRole? @relation(fields: [permissionRoleId], references: [id])
+
+  refreshTokens RefreshToken[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([role])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+/// A named bundle of permissions. Created and managed by admins.
+/// Examples: "Reports Admin", "Sales Manager", "Full Admin".
+model PermissionRole {
+  id          String     @id @default(cuid())
+  name        String
+  description String?
+  /// Which kind of user this role can be assigned to (ADMIN or MANAGER).
+  appliesTo   SystemRole @map("applies_to")
+
+  users       User[]
+  permissions PermissionRolePermission[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@map("permission_roles")
+}
+
+/// The static catalog of capabilities that can be granted to a PermissionRole.
+/// Seeded at deploy time, not user-managed at runtime.
+/// Example keys: 'MANAGE_SUPERVISORS', 'EXPORT_REPORTS', 'VIEW_SALES'.
+model Permission {
+  id            String  @id @default(cuid())
+  key           String  @unique
+  descriptionAr String  @map("description_ar")
+  descriptionEn String? @map("description_en")
+  /// Which feature module this permission belongs to (e.g. 'supervisors').
+  module        String
+
+  roles PermissionRolePermission[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("permissions")
+}
+
+/// Many-to-many join between PermissionRole and Permission.
+model PermissionRolePermission {
+  permissionRoleId String @map("permission_role_id")
+  permissionId     String @map("permission_id")
+
+  permissionRole PermissionRole @relation(fields: [permissionRoleId], references: [id], onDelete: Cascade)
+  permission     Permission     @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([permissionRoleId, permissionId])
+  @@map("permission_role_permissions")
+}
+
+/// One row per active session per device. The plain refresh token is sent
+/// to the client; only the SHA-256 hash is stored here so a DB leak does
+/// not let an attacker hijack sessions.
+///
+/// On logout: revokedAt = now(). On token rotation: old row revoked,
+/// new row inserted.
+model RefreshToken {
+  id         String    @id @default(cuid())
+  userId     String    @map("user_id")
+  tokenHash  String    @unique @map("token_hash")
+  deviceInfo String?   @map("device_info") // user-agent or app version
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ============================================
+// SYSTEM
 // ============================================
 
 /// Simple key/value store for platform-wide settings.

@@ -33,6 +33,15 @@ const config = {
     url: required('DATABASE_URL'),
   },
 
+  jwt: {
+    accessSecret: required('JWT_ACCESS_SECRET'),
+    accessExpiresIn: optional('JWT_ACCESS_EXPIRES_IN', '15m'),
+  },
+
+  refreshToken: {
+    expiresInDays: parseInt(optional('REFRESH_TOKEN_EXPIRES_IN_DAYS', '7'), 10),
+  },
+
   logging: {
     level: optional('LOG_LEVEL', 'info'),
   },
