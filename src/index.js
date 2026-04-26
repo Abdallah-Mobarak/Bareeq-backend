@@ -1,9 +1,6 @@
 const { config } = require('./config/env');
 const { logger } = require('./utils/logger');
-const {
-  checkDatabaseConnection,
-  disconnectDatabase,
-} = require('./infrastructure/database/prisma');
+const { checkDatabaseConnection, disconnectDatabase } = require('./infrastructure/database/prisma');
 const app = require('./app');
 
 /**
@@ -35,9 +32,7 @@ const start = async () => {
 
   // 2. Start HTTP server
   const server = app.listen(config.port, () => {
-    logger.info(
-      `Server running on http://localhost:${config.port} (env: ${config.nodeEnv})`,
-    );
+    logger.info(`Server running on http://localhost:${config.port} (env: ${config.nodeEnv})`);
     logger.info(`API available at http://localhost:${config.port}${config.apiPrefix}`);
     logger.info(`Health check at http://localhost:${config.port}/health`);
   });
