@@ -63,7 +63,7 @@ Single table with a `role` enum (`ADMIN`, `MANAGER`, `SUPERVISOR`, `COMPANY_USER
 
 ### 7. Branch managers are NOT users
 
-Branch managers document visits via a one-time signed link + SMS OTP — they have no account. Their phone number is stored on the `visits` table directly. The OTP lives in Redis (5-minute expiry), not in PostgreSQL.
+Branch managers document visits via a one-time signed link + SMS OTP — they have no account. Their phone number is stored on the `visit_instances` table directly. The OTP lives in Redis (5-minute expiry), not in PostgreSQL.
 
 **Why:** the FRD doesn't require branch managers to log in or see history — only to document a single visit on demand.
 
@@ -177,23 +177,38 @@ A single `audit_logs` table captures sensitive changes across all domains (visit
 
 | Entity | Purpose |
 |--------|---------|
-| `monthly_schedules` | One per supervisor per month |
-| `scheduled_visits` | Individual visit slots: branch + visit-type + scheduled date |
+| `monthly_schedules` | One per supervisor per `(year, month)` |
+| `scheduled_visits` | **Admin's input**: one row per branch per schedule, captures `number_of_visits` + `first_visit_date` + `type` |
+| `visit_instances` | **System-generated**: one row per V1/V2/V3..., with the auto-distributed date and the full execution lifecycle |
+| `region_schedules` | Admin-managed planning template at the region level (deferred — see open questions) |
 
 ### Key relationships
 
 - A `monthly_schedule` belongs to one `user` (supervisor) and covers one `(year, month)`.
 - A `monthly_schedule` has many `scheduled_visits`.
-- A `scheduled_visit` references one `branch`, has a `visit_type` (V1/V2/V3/V4) and a `scheduled_date`.
+- A `scheduled_visit` references one `branch`, holds `number_of_visits` (1–4), `first_visit_date`, and `type` (`REGULAR` or `ADDITIONAL`).
+- A `scheduled_visit` has many `visit_instances` — one per V1, V2, V3, V4.
+- The `visit_instance` is where the supervisor takes action (Domain 5).
+
+### Why split into two tables?
+
+The admin's mental model is *"Branch X needs 3 visits this month starting May 2"*.
+The system's mental model is *"V1 = May 2, V2 = May 17, V3 = May 31"*.
+
+Storing the input separately from the generated dates means:
+- We can re-generate dates if the admin edits the input
+- "How many visits did branch X have planned?" is one row, not a SUM
+- The auto-distribution algorithm has a clean place to write its output
 
 ### Notes
 
-- The system auto-distributes dates: 2 visits → 15 days apart; 3+ visits → evenly across the month.
-- A scheduled_visit is the "appointment". The actual `visit` row (Domain 5) is created when the supervisor takes action.
+- Date distribution rule: 2 visits → 15 days apart; 3+ visits → evenly across the month, never spilling over.
+- Deleting a `scheduled_visit` cascades to its `visit_instances`.
 
 ### Open questions
 
-- If the admin imports the same supervisor's schedule via Excel twice in the same month, do we replace, merge, or reject?
+- Re-import behaviour: if the admin imports the same supervisor's schedule twice, do we replace, merge, or reject?
+- `region_schedules`: do we ship it in v1, or defer until a real user requests it?
 
 ---
 
@@ -203,62 +218,72 @@ A single `audit_logs` table captures sensitive changes across all domains (visit
 
 | Entity | Purpose |
 |--------|---------|
-| `visits` | The actual visit record: status, timing, GPS, branch manager phone |
-| `visit_photos` | 3–4 photos uploaded per implemented visit |
-| `visit_task_completions` | Which `branch_required_tasks` were marked done |
-| `visit_documentations` | The branch manager's documentation: job number, rating, comments, OTP used |
+| `visit_instances` | One per V1/V2/V3...: status, timing, GPS, branch manager phone, immutability marker |
+| `visit_photos` | 0–4 photos uploaded per implemented instance |
+| `visit_task_completions` | Which `branch_required_tasks` the supervisor checked off in this instance |
+| `visit_documentations` | The branch manager's attestation: job number, rating, comments, OTP-used hash |
 
 ### Key relationships
 
-- A `visit` belongs to one `scheduled_visit` **OR** one `additional_task` (polymorphic — exactly one).
-- A `visit` has many `visit_photos` (0–4).
-- A `visit` has many `visit_task_completions` (matches the branch's required tasks for that visit type).
-- A `visit` has zero or one `visit_documentation`.
-- A `visit` references one `not_implemented_reason` if status is `NOT_IMPLEMENTED`.
+- A `visit_instance` belongs to one `scheduled_visit`. There is **no polymorphism** — additional tasks are also `scheduled_visits` (with `type = 'ADDITIONAL'`), so the same FK works for both.
+- A `visit_instance` has many `visit_photos` (0–4).
+- A `visit_instance` has many `visit_task_completions` (one per branch required task for this visit type).
+- A `visit_instance` has zero or one `visit_documentation`.
+- A `visit_instance` references one `not_implemented_reason` when status is `NOT_IMPLEMENTED`.
 
 ### Lifecycle (state machine)
 
 ```
 REMAINING ──┬──► UNDERWAY ──► IMPLEMENTED ──► (optionally) DOCUMENTED
+            │                       │
+            │                       ▼
+            │                  locked_at = now()
             │
-            ├──► NOT_IMPLEMENTED   (with reason)
+            ├──► NOT_IMPLEMENTED  (with reason)  →  locked_at = now()
             │
-            └──► FINAL_CLOSED      (cascades: all later visits for this branch
-                                    auto-marked NOT_IMPLEMENTED)
+            └──► FINAL_CLOSED                    →  locked_at = now()
+                 (cascades: all later V2/V3/V4 instances of the same
+                  scheduled_visit auto-created as NOT_IMPLEMENTED)
 ```
 
 ### Notes
 
-- **Immutability:** once status leaves `REMAINING` or `UNDERWAY`, it's locked. Photos and reasons can be edited; status, start/end times, and duration cannot.
-- **Order enforcement:** V2 cannot be started until V1 reaches a final status (Implemented, Not Implemented, or Final Closed).
-- **Final Closed cascade:** marking V1 as Final Closed auto-creates `visits` rows for V2, V3, V4 with status `NOT_IMPLEMENTED`.
+- **Immutability via `locked_at`:** when a `visit_instance` reaches a terminal status, the service layer sets `locked_at = now()`. The update guard refuses any write if `locked_at IS NOT NULL`.
+- **Order enforcement:** V2 cannot be started until V1's `locked_at` is set.
+- **Final Closed cascade:** marking V1 as `FINAL_CLOSED` auto-creates V2/V3/V4 instances with `status = NOT_IMPLEMENTED` and `locked_at = now()`.
+- **Edits after lock:** photo edits and reason updates are allowed and tracked in `audit_logs`. Status, start/end times, and duration are frozen.
 
 ### Open questions
 
-- Where do photos live? Cloudinary URLs in the DB, or local during dev?
-- How long do we keep photos? Forever or with a retention policy?
-- What's the exact polymorphic shape for `visit.owner` — two nullable FKs with a check constraint, or a discriminator + ID?
+- Where do photos live? Cloudinary URLs in the DB; local fallback during dev only.
+- How long do we keep photos? Forever, or with a retention policy?
 
 ---
 
 ## Domain 6 — Additional Tasks
 
-### Entities
+Additional tasks are **not a separate entity**. They are `scheduled_visits` with `type = 'ADDITIONAL'`, reusing the entire scheduling and visit-execution machinery from Domains 4 and 5.
 
-| Entity | Purpose |
-|--------|---------|
-| `additional_tasks` | Extra visits assigned by manager to supervisor outside the monthly schedule |
+### What's different from regular scheduled visits
 
-### Key relationships
+| Field | `REGULAR` | `ADDITIONAL` |
+|-------|-----------|--------------|
+| `monthly_schedule_id` | required | NULL |
+| `assigned_by_manager_id` | NULL | required |
+| `assigned_to_supervisor_id` | derived from schedule | required |
+| `price` | NULL | optional |
+| `notes` | NULL | optional |
+| `number_of_visits` | 1–4 | always 1 |
+| Branch source | catalog | catalog (no free-form addresses for now) |
 
-- An `additional_task` is assigned by one `user` (manager) to one `user` (supervisor).
-- An `additional_task` references one `branch` (or freeform address if branch isn't in the catalog — TBD).
-- An `additional_task` has one `visit` (sharing the same execution lifecycle as scheduled visits).
+### Why fold into `scheduled_visits`?
+
+Both follow the exact same lifecycle (REMAINING → UNDERWAY → IMPLEMENTED → DOCUMENTED). Splitting them would mean parallel `additional_task_*` tables for photos, completions, docs, and audit — a near-copy of the entire visits domain. The `type` discriminator is far DRYer.
 
 ### Open questions
 
-- Is the branch always from the catalog, or can managers enter any address ad-hoc? FRD examples show structured branches.
-- Does an additional task have a `price` field that affects manager commission? FRD §3.9.2 mentions price but its purpose is unclear.
+- Do we ever need free-form addresses (branch not in catalog)? FRD examples are all structured branches.
+- Does the `price` field affect manager commission, or is it informational only?
 
 ---
 
@@ -351,12 +376,12 @@ REMAINING ──┬──► UNDERWAY ──► IMPLEMENTED ──► (optionall
 
 | Entity | Purpose |
 |--------|---------|
-| `admin_tasks` | Tasks the admin assigns to a manager (Done / Not Done) |
+| `manager_tasks` | Tasks the admin assigns to a manager (Done / Not Done). Named after the recipient, not the assigner. |
 | `contact_messages` | Form submissions from companies to admins |
 
 ### Key relationships
 
-- An `admin_task` is assigned by one `user` (admin) to one `user` (manager).
+- A `manager_task` is assigned by one `user` (admin) to one `user` (manager).
 - A `contact_message` is sent by one `user` (company) and may be replied to by one `user` (admin).
 
 ---
@@ -390,16 +415,21 @@ Collect answers as we go. Don't block early phases on later-domain questions.
 | # | Question | Domain | Blocks |
 |---|----------|--------|--------|
 | 1 | Hashed or plain OTP in Redis? | Identity | Phase 5 (OTP flow) |
-| 2 | One refresh-token table or per-role? | Identity | Phase 1 (Auth) |
-| 3 | Are branch categories needed at all? | Catalog | Phase 3 |
-| 4 | Source of branch `code` field? | Branches | Phase 3 |
-| 5 | Branch coordinates or just address? | Branches | Phase 3 |
-| 6 | Re-import behaviour for monthly schedules? | Scheduling | Phase 4 |
+| 2 | Are branch categories needed at all? | Catalog | Phase 3 |
+| 3 | Source of branch `code` field? | Branches | Phase 3 |
+| 4 | Branch coordinates or just address? | Branches | Phase 3 |
+| 5 | Re-import behaviour for monthly schedules? | Scheduling | Phase 4 |
+| 6 | Ship `region_schedules` in v1, or defer? | Scheduling | Phase 4 |
 | 7 | Photo storage strategy and retention? | Visits | Phase 5 |
-| 8 | Polymorphic `visit.owner` shape? | Visits | Phase 5 |
-| 9 | Additional tasks: catalog branch only or freeform? | Additional Tasks | Phase 6 |
-| 10 | Additional task `price` purpose? | Additional Tasks | Phase 6 |
-| 11 | Representative price: snapshot or derived? | Representatives | Phase 10 |
+| 8 | Additional tasks: catalog branch only or free-form? | Additional Tasks | Phase 6 |
+| 9 | Additional task `price` purpose (commission?)? | Additional Tasks | Phase 6 |
+| 10 | Representative price: snapshot or derived? | Representatives | Phase 10 |
+
+### Resolved
+
+- **Refresh tokens:** one shared `refresh_tokens` table for all roles (no per-role split).
+- **Visit polymorphism:** none. Additional tasks are `scheduled_visits` with `type = 'ADDITIONAL'`.
+- **Visit immutability:** enforced via `locked_at` column + service-layer guard.
 
 ---
 
