@@ -95,4 +95,111 @@ const login = async ({ identifier, password: plainPassword, deviceInfo }) => {
   };
 };
 
-module.exports = { login };
+/**
+ * Refresh access + refresh tokens (rotation).
+ *
+ * Why rotate?
+ *   The previous refresh token is revoked the moment it's used. If an
+ *   attacker steals one and races the legitimate user, only one of them
+ *   will succeed; the loser's next refresh attempt will fail and raise
+ *   suspicion. Without rotation, a stolen token is valid for its full
+ *   7-day window with no way to detect misuse.
+ */
+const refresh = async ({ refreshToken: oldToken, deviceInfo }) => {
+  const oldHash = crypto.createHash('sha256').update(oldToken).digest('hex');
+
+  const stored = await prisma.refreshToken.findUnique({
+    where: { tokenHash: oldHash },
+    include: { user: true },
+  });
+
+  // Token unknown, revoked, or expired ⇒ same generic 401
+  if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
+    throw ApiError.unauthorized('Invalid or expired refresh token');
+  }
+
+  if (stored.user.deletedAt) {
+    throw ApiError.unauthorized('Invalid or expired refresh token');
+  }
+
+  if (stored.user.status === 'BLOCKED') {
+    throw ApiError.forbidden('Account is blocked');
+  }
+
+  const newToken = crypto.randomBytes(32).toString('base64url');
+  const newHash = crypto.createHash('sha256').update(newToken).digest('hex');
+  const newExpiresAt = new Date(
+    Date.now() + config.refreshToken.expiresInDays * 24 * 60 * 60 * 1000,
+  );
+
+  // Atomic swap: revoke the old, insert the new. Either both happen or neither.
+  await prisma.$transaction([
+    prisma.refreshToken.update({
+      where: { id: stored.id },
+      data: { revokedAt: new Date() },
+    }),
+    prisma.refreshToken.create({
+      data: {
+        userId: stored.userId,
+        tokenHash: newHash,
+        deviceInfo: deviceInfo ?? null,
+        expiresAt: newExpiresAt,
+      },
+    }),
+  ]);
+
+  const accessToken = signAccessToken({
+    sub: stored.user.id,
+    role: stored.user.role,
+    permissionRoleId: stored.user.permissionRoleId,
+  });
+
+  logger.info({ userId: stored.user.id }, 'Tokens refreshed');
+
+  return {
+    accessToken,
+    refreshToken: newToken,
+    accessTokenExpiresIn: config.jwt.accessExpiresIn,
+  };
+};
+
+/**
+ * Logout: revoke the given refresh token. Idempotent — calling it twice
+ * is fine, and we don't leak whether the token existed.
+ *
+ * Note: the access token itself is not revoked (JWTs are stateless).
+ * It will simply die at its 15-minute expiry.
+ */
+const logout = async ({ refreshToken: token }) => {
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+  await prisma.refreshToken.updateMany({
+    where: { tokenHash, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+};
+
+/**
+ * Fetch the authenticated user fresh from the DB.
+ * We don't trust the JWT alone for /me because:
+ *   - Status may have flipped to BLOCKED since the token was issued
+ *   - Profile fields may have been edited
+ *   - Permission role may have been changed
+ */
+const getMe = async (userId) => {
+  const user = await prisma.user.findFirst({
+    where: { id: userId, deletedAt: null },
+  });
+
+  if (!user) {
+    throw ApiError.unauthorized('User not found');
+  }
+
+  if (user.status === 'BLOCKED') {
+    throw ApiError.forbidden('Account is blocked');
+  }
+
+  return serializeUser(user);
+};
+
+module.exports = { login, refresh, logout, getMe };

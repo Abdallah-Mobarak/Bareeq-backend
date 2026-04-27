@@ -15,4 +15,13 @@ const loginSchema = Joi.object({
   deviceInfo: Joi.string().max(255).optional().allow(null, ''),
 });
 
-module.exports = { loginSchema };
+/**
+ * POST /auth/refresh and POST /auth/logout share this body shape.
+ * The refresh token is a 32-byte random value, base64url-encoded ⇒
+ * 43 chars. We allow 32–256 to be defensive against future changes.
+ */
+const refreshTokenSchema = Joi.object({
+  refreshToken: Joi.string().trim().min(32).max(256).required(),
+});
+
+module.exports = { loginSchema, refreshTokenSchema };
