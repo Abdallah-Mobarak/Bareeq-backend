@@ -146,6 +146,58 @@ model RefreshToken {
 }
 
 // ============================================
+// CATALOG — Phase 2 (lookups referenced by branches & visits)
+// ============================================
+
+/// Geographic region. Cities and branches reference it.
+model Region {
+  id     String @id @default(cuid())
+  nameAr String @map("name_ar")
+  nameEn String? @map("name_en")
+
+  cities City[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([deletedAt])
+  @@map("regions")
+}
+
+/// City within a region. Branches reference both region and city.
+model City {
+  id       String @id @default(cuid())
+  regionId String @map("region_id")
+  region   Region @relation(fields: [regionId], references: [id])
+  nameAr   String @map("name_ar")
+  nameEn   String? @map("name_en")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([regionId])
+  @@index([deletedAt])
+  @@map("cities")
+}
+
+/// Admin-managed list of reasons a supervisor can pick when marking a
+/// visit as "Not Implemented". Visit instances FK into this table.
+model NotImplementedReason {
+  id      String @id @default(cuid())
+  titleAr String @map("title_ar")
+  titleEn String? @map("title_en")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([deletedAt])
+  @@map("not_implemented_reasons")
+}
+
+// ============================================
 // SYSTEM
 // ============================================
 
