@@ -244,8 +244,35 @@ Ask the lead in your handoff if your feature touches any of these:
 
 ---
 
-## 12. When in doubt
+## 12. Known gotchas — do not relearn the hard way
 
-Look at `src/modules/auth/` — it is the reference implementation. Copy its shape, naming, and style exactly.
+These are real bugs we've already paid for. Apply the workaround on the first try.
+
+### Express 5: `req.query` is read-only
+Direct assignment (`req.query = value`) is silently ignored. The `validate(schema, 'query')` middleware therefore stores its result on `req.validatedQuery`, not on `req.query`. **List / index endpoints must read from `req.validatedQuery`** (after the validate middleware has run). `req.body` and `req.params` remain writable and are replaced in place.
+
+### Joi 18: `Joi.string().email()` rejects `.local` and many corp TLDs
+Joi's email validator checks against the IANA TLD list, which omits internal-only TLDs like `.local`. Use a permissive regex pattern instead:
+
+```js
+Joi.string()
+  .lowercase()
+  .trim()
+  .pattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/u)
+  .messages({ 'string.pattern.base': '"email" must be a valid email' })
+  .required()
+```
+
+### Joi: type coercion must be explicit
+The `validate` middleware passes `convert: true` so `?limit=5` becomes `5` (number) for a `Joi.number()` schema. If you ever bypass the middleware, remember to pass `convert: true` yourself.
+
+### Reference list endpoint
+Look at `src/modules/managers/managers.routes.js` and `managers.controller.js` for the canonical paginated list pattern (validate query → read req.validatedQuery → service runs `prisma.$transaction` for items + count).
+
+---
+
+## 13. When in doubt
+
+Look at `src/modules/auth/` for auth flows and `src/modules/managers/` for CRUD + pagination. Copy their shape, naming, and style exactly.
 
 If something is genuinely ambiguous, **stop and ask** rather than guess. The reviewer would rather answer one question than rewrite a feature.

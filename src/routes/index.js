@@ -1,6 +1,7 @@
 const { Router } = require('express');
 
 const authRoutes = require('../modules/auth/auth.routes');
+const managersRoutes = require('../modules/managers/managers.routes');
 
 const router = Router();
 
@@ -12,6 +13,7 @@ const router = Router();
  */
 
 router.use('/auth', authRoutes);
+router.use('/managers', managersRoutes);
 
 router.get('/', (req, res) => {
   res.json({

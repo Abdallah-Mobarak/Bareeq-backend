@@ -15,6 +15,7 @@ const validate =
     const { error, value } = schema.validate(req[source], {
       abortEarly: false, // collect all errors, not just the first
       stripUnknown: true, // drop fields not declared in the schema
+      convert: true, // coerce strings to declared types (numbers, booleans)
     });
 
     if (error) {
@@ -25,7 +26,16 @@ const validate =
       return next(ApiError.badRequest('Validation failed', details));
     }
 
-    req[source] = value;
+    // Express 5 made req.query a read-only getter, so direct assignment
+    // is silently ignored. We expose validated query under a separate
+    // property; controllers read from req.validatedQuery for list endpoints.
+    // req.body and req.params remain writable, so we keep replacing them
+    // in place for source consistency at the call site.
+    if (source === 'query') {
+      req.validatedQuery = value;
+    } else {
+      req[source] = value;
+    }
     next();
   };
 
