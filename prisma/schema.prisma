@@ -62,6 +62,11 @@ model User {
   permissionRoleId String?         @map("permission_role_id")
   permissionRole   PermissionRole? @relation(fields: [permissionRoleId], references: [id])
 
+  // Set only when role = COMPANY_USER. Links the login account to the
+  // company entity it represents.
+  companyId String?  @map("company_id")
+  company   Company? @relation(fields: [companyId], references: [id])
+
   refreshTokens RefreshToken[]
 
   createdAt DateTime  @default(now()) @map("created_at")
@@ -70,6 +75,7 @@ model User {
 
   @@index([role])
   @@index([deletedAt])
+  @@index([companyId])
   @@map("users")
 }
 
@@ -155,7 +161,8 @@ model Region {
   nameAr String @map("name_ar")
   nameEn String? @map("name_en")
 
-  cities City[]
+  cities   City[]
+  branches Branch[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -172,6 +179,8 @@ model City {
   region   Region @relation(fields: [regionId], references: [id])
   nameAr   String @map("name_ar")
   nameEn   String? @map("name_en")
+
+  branches Branch[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -196,6 +205,112 @@ model NotImplementedReason {
   @@index([deletedAt])
   @@map("not_implemented_reasons")
 }
+
+// ============================================
+// COMPANIES & BRANCHES — Phase 3
+// ============================================
+
+/// Client organisation that owns one or more branches we visit.
+/// Has a single login account (User with role=COMPANY_USER) created
+/// atomically with the Company.
+model Company {
+  id     String  @id @default(cuid())
+  nameAr String  @map("name_ar")
+  nameEn String? @map("name_en")
+
+  /// Optional contact info for the company entity itself
+  /// (different from the login user's email/phone).
+  contactEmail String? @map("contact_email")
+  contactPhone String? @map("contact_phone")
+
+  loginUsers User[]
+  branches   Branch[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([deletedAt])
+  @@map("companies")
+}
+
+/// Branch category (e.g. "Hypermarket", "Express", "Pharmacy").
+/// Optional on branches per FRD §1.2.4.
+model Category {
+  id     String  @id @default(cuid())
+  nameAr String  @map("name_ar")
+  nameEn String? @map("name_en")
+
+  branches Branch[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([deletedAt])
+  @@map("categories")
+}
+
+/// A physical branch belonging to a Company. The unit a supervisor visits.
+model Branch {
+  id String @id @default(cuid())
+
+  companyId  String  @map("company_id")
+  company    Company @relation(fields: [companyId], references: [id])
+  categoryId String? @map("category_id")
+  category   Category? @relation(fields: [categoryId], references: [id])
+  regionId   String  @map("region_id")
+  region     Region  @relation(fields: [regionId], references: [id])
+  cityId     String  @map("city_id")
+  city       City    @relation(fields: [cityId], references: [id])
+
+  nameAr       String  @map("name_ar")
+  nameEn       String? @map("name_en")
+  branchNumber String? @map("branch_number")
+  code         String?
+  addressAr    String? @map("address_ar")
+  addressEn    String? @map("address_en")
+  latitude     Decimal?
+  longitude    Decimal?
+
+  /// 1..4 — drives schedule generation in Phase 4.
+  visitsPerMonth Int @default(1) @map("visits_per_month")
+
+  requiredTasks BranchRequiredTask[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([companyId])
+  @@index([regionId])
+  @@index([cityId])
+  @@index([code])
+  @@index([deletedAt])
+  @@map("branches")
+}
+
+/// Tasks the supervisor must complete during a visit of a given visit type
+/// at a specific branch. (V1 of branch X has a different list than V2.)
+model BranchRequiredTask {
+  id        String @id @default(cuid())
+  branchId  String @map("branch_id")
+  branch    Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  visitType Int    @map("visit_type") // 1=V1, 2=V2, 3=V3, 4=V4
+  titleAr   String @map("title_ar")
+  titleEn   String? @map("title_en")
+  sortOrder Int    @default(0) @map("sort_order")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([branchId, visitType])
+  @@map("branch_required_tasks")
+}
+
+// Add the inverse of Region/City relations to branches (Prisma needs this)
+// Region.branches and City.branches are added below via separate model edits.
 
 // ============================================
 // SYSTEM
