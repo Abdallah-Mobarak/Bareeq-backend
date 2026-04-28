@@ -7,9 +7,15 @@ Design notes, domain maps, and reference material for the Bareeq backend.
 ```
 docs/
 ├── README.md                  ← you are here
-├── management/                ← Management System docs
+├── AI_HANDOFF.md              ← context pack for parallel AI agents
+├── feature-template.md        ← template for specifying a feature to an AI
+├── testing-flow.md            ← manual end-to-end testing sequence
+├── management/                ← Management System design docs
 │   ├── domain-map.md          ← high-level entity map and decisions
-│   └── erd.dbml               ← visual ERD source (paste into dbdiagram.io)
+│   └── erd.dbml               ← visual ERD (paste into dbdiagram.io)
+├── postman/                   ← API test collection
+│   ├── bareeq-api.postman_collection.json
+│   └── bareeq-api.postman_environment.json
 └── services/                  ← Services Marketplace docs (added later)
 ```
 

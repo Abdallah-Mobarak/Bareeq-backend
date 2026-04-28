@@ -1,0 +1,715 @@
+{
+  "info": {
+    "name": "Bareeq API",
+    "description": "Full API collection for Bareeq backend — covers auth, catalog, users, branches.\n\nUsage:\n1. Import this collection AND the matching environment file.\n2. Select the 'Bareeq Local' environment in the top-right.\n3. Run the requests in order, or use the Runner on the 'Happy Path' folder.\n\nLogin auto-captures access + refresh tokens. Each Create endpoint auto-captures its ID into an env variable so subsequent requests can use it.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "00 — Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "http://localhost:3000/health", "protocol": "http", "host": ["localhost"], "port": "3000", "path": ["health"] }
+          }
+        },
+        {
+          "name": "GET / (welcome)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/", "host": ["{{baseUrl}}"], "path": [""] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 — Auth",
+      "item": [
+        {
+          "name": "POST /auth/login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success && res.data) {",
+                  "  pm.environment.set('accessToken', res.data.accessToken);",
+                  "  pm.environment.set('refreshToken', res.data.refreshToken);",
+                  "  console.log('Tokens saved.');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST /auth/refresh",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success && res.data) {",
+                  "  pm.environment.set('accessToken', res.data.accessToken);",
+                  "  pm.environment.set('refreshToken', res.data.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/refresh", "host": ["{{baseUrl}}"], "path": ["auth", "refresh"] },
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" }
+          }
+        },
+        {
+          "name": "GET /auth/me",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/auth/me", "host": ["{{baseUrl}}"], "path": ["auth", "me"] }
+          }
+        },
+        {
+          "name": "POST /auth/logout",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/logout", "host": ["{{baseUrl}}"], "path": ["auth", "logout"] },
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02a — Regions",
+      "item": [
+        {
+          "name": "POST /regions",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const res = pm.response.json();",
+              "if (res.success) pm.environment.set('regionId', res.data.region.id);"
+            ]}
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/regions", "host": ["{{baseUrl}}"], "path": ["regions"] },
+            "body": { "mode": "raw", "raw": "{\n  \"nameAr\": \"الرياض\",\n  \"nameEn\": \"Riyadh\"\n}" }
+          }
+        },
+        {
+          "name": "GET /regions",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/regions?page=1&limit=20&sort=newest",
+              "host": ["{{baseUrl}}"],
+              "path": ["regions"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "sort", "value": "newest" },
+                { "key": "q", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /regions/:id",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/regions/{{regionId}}", "host": ["{{baseUrl}}"], "path": ["regions", "{{regionId}}"] }
+          }
+        },
+        {
+          "name": "PATCH /regions/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/regions/{{regionId}}", "host": ["{{baseUrl}}"], "path": ["regions", "{{regionId}}"] },
+            "body": { "mode": "raw", "raw": "{\n  \"nameEn\": \"Riyadh Province\"\n}" }
+          }
+        },
+        {
+          "name": "DELETE /regions/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/regions/{{regionId}}", "host": ["{{baseUrl}}"], "path": ["regions", "{{regionId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02b — Cities",
+      "item": [
+        {
+          "name": "POST /cities",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const res = pm.response.json();",
+              "if (res.success) pm.environment.set('cityId', res.data.city.id);"
+            ]}
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/cities", "host": ["{{baseUrl}}"], "path": ["cities"] },
+            "body": { "mode": "raw", "raw": "{\n  \"regionId\": \"{{regionId}}\",\n  \"nameAr\": \"الرياض\",\n  \"nameEn\": \"Riyadh\"\n}" }
+          }
+        },
+        {
+          "name": "GET /cities",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/cities?regionId={{regionId}}&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["cities"],
+              "query": [
+                { "key": "regionId", "value": "{{regionId}}" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /cities/:id",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/cities/{{cityId}}", "host": ["{{baseUrl}}"], "path": ["cities", "{{cityId}}"] }
+          }
+        },
+        {
+          "name": "PATCH /cities/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/cities/{{cityId}}", "host": ["{{baseUrl}}"], "path": ["cities", "{{cityId}}"] },
+            "body": { "mode": "raw", "raw": "{\n  \"nameEn\": \"Riyadh City\"\n}" }
+          }
+        },
+        {
+          "name": "DELETE /cities/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/cities/{{cityId}}", "host": ["{{baseUrl}}"], "path": ["cities", "{{cityId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02c — Reasons",
+      "item": [
+        {
+          "name": "POST /reasons",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const res = pm.response.json();",
+              "if (res.success) pm.environment.set('reasonId', res.data.reason.id);"
+            ]}
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/reasons", "host": ["{{baseUrl}}"], "path": ["reasons"] },
+            "body": { "mode": "raw", "raw": "{\n  \"titleAr\": \"الفرع مغلق\",\n  \"titleEn\": \"Branch closed\"\n}" }
+          }
+        },
+        {
+          "name": "GET /reasons",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/reasons?page=1&limit=20", "host": ["{{baseUrl}}"], "path": ["reasons"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "20" }] }
+          }
+        },
+        {
+          "name": "GET /reasons/:id",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/reasons/{{reasonId}}", "host": ["{{baseUrl}}"], "path": ["reasons", "{{reasonId}}"] }
+          }
+        },
+        {
+          "name": "PATCH /reasons/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/reasons/{{reasonId}}", "host": ["{{baseUrl}}"], "path": ["reasons", "{{reasonId}}"] },
+            "body": { "mode": "raw", "raw": "{\n  \"titleEn\": \"Branch permanently closed\"\n}" }
+          }
+        },
+        {
+          "name": "DELETE /reasons/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/reasons/{{reasonId}}", "host": ["{{baseUrl}}"], "path": ["reasons", "{{reasonId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02d — Categories",
+      "item": [
+        {
+          "name": "POST /categories",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const res = pm.response.json();",
+              "if (res.success) pm.environment.set('categoryId', res.data.category.id);"
+            ]}
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/categories", "host": ["{{baseUrl}}"], "path": ["categories"] },
+            "body": { "mode": "raw", "raw": "{\n  \"nameAr\": \"هايبر ماركت\",\n  \"nameEn\": \"Hypermarket\"\n}" }
+          }
+        },
+        {
+          "name": "GET /categories",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/categories?page=1&limit=20", "host": ["{{baseUrl}}"], "path": ["categories"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "20" }] }
+          }
+        },
+        {
+          "name": "GET /categories/:id",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/categories/{{categoryId}}", "host": ["{{baseUrl}}"], "path": ["categories", "{{categoryId}}"] }
+          }
+        },
+        {
+          "name": "PATCH /categories/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/categories/{{categoryId}}", "host": ["{{baseUrl}}"], "path": ["categories", "{{categoryId}}"] },
+            "body": { "mode": "raw", "raw": "{\n  \"nameEn\": \"Hyper Market\"\n}" }
+          }
+        },
+        {
+          "name": "DELETE /categories/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/categories/{{categoryId}}", "host": ["{{baseUrl}}"], "path": ["categories", "{{categoryId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03a — Managers",
+      "item": [
+        {
+          "name": "POST /managers",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const res = pm.response.json();",
+              "if (res.success) pm.environment.set('managerId', res.data.manager.id);"
+            ]}
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/managers", "host": ["{{baseUrl}}"], "path": ["managers"] },
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"manager1@bareeq.local\",\n  \"phone\": \"+966500001111\",\n  \"password\": \"MgrPass123\",\n  \"nameAr\": \"المدير الأول\",\n  \"nameEn\": \"Manager One\"\n}" }
+          }
+        },
+        {
+          "name": "GET /managers",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/managers?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["managers"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "q", "value": "", "disabled": true },
+                { "key": "status", "value": "ENABLED", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /managers/:id",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/managers/{{managerId}}", "host": ["{{baseUrl}}"], "path": ["managers", "{{managerId}}"] }
+          }
+        },
+        {
+          "name": "PATCH /managers/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/managers/{{managerId}}", "host": ["{{baseUrl}}"], "path": ["managers", "{{managerId}}"] },
+            "body": { "mode": "raw", "raw": "{\n  \"nameEn\": \"Manager One Updated\"\n}" }
+          }
+        },
+        {
+          "name": "PATCH /managers/:id/password",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/managers/{{managerId}}/password", "host": ["{{baseUrl}}"], "path": ["managers", "{{managerId}}", "password"] },
+            "body": { "mode": "raw", "raw": "{\n  \"newPassword\": \"NewMgrPass456\"\n}" }
+          }
+        },
+        {
+          "name": "PATCH /managers/:id/status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/managers/{{managerId}}/status", "host": ["{{baseUrl}}"], "path": ["managers", "{{managerId}}", "status"] },
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"BLOCKED\"\n}" }
+          }
+        },
+        {
+          "name": "DELETE /managers/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/managers/{{managerId}}", "host": ["{{baseUrl}}"], "path": ["managers", "{{managerId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03b — Supervisors",
+      "item": [
+        {
+          "name": "POST /supervisors",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const res = pm.response.json();",
+              "if (res.success) pm.environment.set('supervisorId', res.data.supervisor.id);"
+            ]}
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/supervisors", "host": ["{{baseUrl}}"], "path": ["supervisors"] },
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"supervisor1@bareeq.local\",\n  \"phone\": \"+966500002222\",\n  \"password\": \"SupPass123\",\n  \"nameAr\": \"المشرف الأول\",\n  \"nameEn\": \"Supervisor One\"\n}" }
+          }
+        },
+        {
+          "name": "GET /supervisors",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/supervisors?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["supervisors"],
+              "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "20" }]
+            }
+          }
+        },
+        {
+          "name": "GET /supervisors/:id",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/supervisors/{{supervisorId}}", "host": ["{{baseUrl}}"], "path": ["supervisors", "{{supervisorId}}"] }
+          }
+        },
+        {
+          "name": "PATCH /supervisors/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/supervisors/{{supervisorId}}", "host": ["{{baseUrl}}"], "path": ["supervisors", "{{supervisorId}}"] },
+            "body": { "mode": "raw", "raw": "{\n  \"nameEn\": \"Supervisor One Updated\"\n}" }
+          }
+        },
+        {
+          "name": "PATCH /supervisors/:id/password",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/supervisors/{{supervisorId}}/password", "host": ["{{baseUrl}}"], "path": ["supervisors", "{{supervisorId}}", "password"] },
+            "body": { "mode": "raw", "raw": "{\n  \"newPassword\": \"NewSupPass456\"\n}" }
+          }
+        },
+        {
+          "name": "PATCH /supervisors/:id/status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/supervisors/{{supervisorId}}/status", "host": ["{{baseUrl}}"], "path": ["supervisors", "{{supervisorId}}", "status"] },
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"BLOCKED\"\n}" }
+          }
+        },
+        {
+          "name": "DELETE /supervisors/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/supervisors/{{supervisorId}}", "host": ["{{baseUrl}}"], "path": ["supervisors", "{{supervisorId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03c — Companies",
+      "item": [
+        {
+          "name": "POST /companies",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const res = pm.response.json();",
+              "if (res.success) pm.environment.set('companyId', res.data.company.id);"
+            ]}
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/companies", "host": ["{{baseUrl}}"], "path": ["companies"] },
+            "body": { "mode": "raw", "raw": "{\n  \"nameAr\": \"كارفور\",\n  \"nameEn\": \"Carrefour\",\n  \"contactEmail\": \"info@carrefour.com\",\n  \"contactPhone\": \"+966500003333\",\n  \"loginEmail\": \"company1@bareeq.local\",\n  \"loginPhone\": \"+966500003334\",\n  \"loginPassword\": \"CoPass123\"\n}" }
+          }
+        },
+        {
+          "name": "GET /companies",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/companies?page=1&limit=20", "host": ["{{baseUrl}}"], "path": ["companies"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "20" }] }
+          }
+        },
+        {
+          "name": "GET /companies/:id",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/companies/{{companyId}}", "host": ["{{baseUrl}}"], "path": ["companies", "{{companyId}}"] }
+          }
+        },
+        {
+          "name": "PATCH /companies/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/companies/{{companyId}}", "host": ["{{baseUrl}}"], "path": ["companies", "{{companyId}}"] },
+            "body": { "mode": "raw", "raw": "{\n  \"nameEn\": \"Carrefour Updated\"\n}" }
+          }
+        },
+        {
+          "name": "PATCH /companies/:id/login",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/companies/{{companyId}}/login", "host": ["{{baseUrl}}"], "path": ["companies", "{{companyId}}", "login"] },
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+966500003335\"\n}" }
+          }
+        },
+        {
+          "name": "PATCH /companies/:id/password",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/companies/{{companyId}}/password", "host": ["{{baseUrl}}"], "path": ["companies", "{{companyId}}", "password"] },
+            "body": { "mode": "raw", "raw": "{\n  \"newPassword\": \"NewCoPass456\"\n}" }
+          }
+        },
+        {
+          "name": "PATCH /companies/:id/status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/companies/{{companyId}}/status", "host": ["{{baseUrl}}"], "path": ["companies", "{{companyId}}", "status"] },
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"BLOCKED\"\n}" }
+          }
+        },
+        {
+          "name": "DELETE /companies/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/companies/{{companyId}}", "host": ["{{baseUrl}}"], "path": ["companies", "{{companyId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 — Branches",
+      "item": [
+        {
+          "name": "POST /branches",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "const res = pm.response.json();",
+              "if (res.success) pm.environment.set('branchId', res.data.branch.id);"
+            ]}
+          }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/branches", "host": ["{{baseUrl}}"], "path": ["branches"] },
+            "body": { "mode": "raw", "raw": "{\n  \"companyId\": \"{{companyId}}\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"regionId\": \"{{regionId}}\",\n  \"cityId\": \"{{cityId}}\",\n  \"nameAr\": \"فرع الرياض\",\n  \"nameEn\": \"Riyadh Branch\",\n  \"branchNumber\": \"001\",\n  \"code\": \"RYD-001\",\n  \"addressAr\": \"شارع الملك فهد\",\n  \"addressEn\": \"King Fahd St.\",\n  \"latitude\": 24.7136,\n  \"longitude\": 46.6753,\n  \"visitsPerMonth\": 2,\n  \"requiredTasks\": [\n    { \"visitType\": 1, \"titleAr\": \"تنظيف\", \"titleEn\": \"Cleaning\", \"sortOrder\": 1 },\n    { \"visitType\": 1, \"titleAr\": \"فحص\", \"titleEn\": \"Inspection\", \"sortOrder\": 2 },\n    { \"visitType\": 2, \"titleAr\": \"تقرير شهري\", \"titleEn\": \"Monthly report\" }\n  ]\n}" }
+          }
+        },
+        {
+          "name": "GET /branches",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/branches?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["branches"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "companyId", "value": "{{companyId}}", "disabled": true },
+                { "key": "regionId", "value": "{{regionId}}", "disabled": true },
+                { "key": "cityId", "value": "{{cityId}}", "disabled": true },
+                { "key": "categoryId", "value": "{{categoryId}}", "disabled": true },
+                { "key": "q", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /branches/:id",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/branches/{{branchId}}", "host": ["{{baseUrl}}"], "path": ["branches", "{{branchId}}"] }
+          }
+        },
+        {
+          "name": "PATCH /branches/:id (replace tasks)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/branches/{{branchId}}", "host": ["{{baseUrl}}"], "path": ["branches", "{{branchId}}"] },
+            "body": { "mode": "raw", "raw": "{\n  \"visitsPerMonth\": 3,\n  \"requiredTasks\": [\n    { \"visitType\": 1, \"titleAr\": \"تنظيف فقط\", \"titleEn\": \"Cleaning only\" }\n  ]\n}" }
+          }
+        },
+        {
+          "name": "DELETE /branches/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/branches/{{branchId}}", "host": ["{{baseUrl}}"], "path": ["branches", "{{branchId}}"] }
+          }
+        }
+      ]
+    }
+  ]
+}
