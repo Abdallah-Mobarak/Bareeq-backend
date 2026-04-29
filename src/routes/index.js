@@ -9,6 +9,7 @@ const citiesRoutes = require('../modules/cities/cities.routes');
 const reasonsRoutes = require('../modules/reasons/reasons.routes');
 const categoriesRoutes = require('../modules/categories/categories.routes');
 const branchesRoutes = require('../modules/branches/branches.routes');
+const monthlySchedulesRoutes = require('../modules/monthly-schedules/monthly-schedules.routes');
 
 const router = Router();
 
@@ -28,12 +29,13 @@ router.use('/cities', citiesRoutes);
 router.use('/reasons', reasonsRoutes);
 router.use('/categories', categoriesRoutes);
 router.use('/branches', branchesRoutes);
+router.use('/monthly-schedules', monthlySchedulesRoutes);
 
 router.get('/', (req, res) => {
   res.json({
     message: 'Bareeq API',
     version: '0.1.0',
-    phase: 'Phase 3: Companies & Branches',
+    phase: 'Phase 4: Scheduling',
   });
 });
 

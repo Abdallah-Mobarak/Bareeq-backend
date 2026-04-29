@@ -33,6 +33,29 @@ enum UserStatus {
   BLOCKED
 }
 
+/// What kind of scheduled visit this row represents.
+/// REGULAR    — generated as part of a supervisor's monthly schedule
+/// ADDITIONAL — ad-hoc, assigned by a manager outside the schedule
+enum ScheduledVisitType {
+  REGULAR
+  ADDITIONAL
+}
+
+/// Lifecycle of a single visit instance (V1 / V2 / V3 / V4).
+enum VisitStatus {
+  REMAINING       // no action yet (default)
+  UNDERWAY        // started but not finished
+  IMPLEMENTED     // completed
+  NOT_IMPLEMENTED // skipped with a reason
+  FINAL_CLOSED    // branch permanently closed; cascades to remaining V's
+}
+
+/// Whether the branch manager has documented this visit.
+enum DocumentationStatus {
+  DOCUMENTED
+  UNDOCUMENTED
+}
+
 // ============================================
 // IDENTITY & ACCESS — Phase 1
 // ============================================
@@ -67,7 +90,10 @@ model User {
   companyId String?  @map("company_id")
   company   Company? @relation(fields: [companyId], references: [id])
 
-  refreshTokens RefreshToken[]
+  refreshTokens     RefreshToken[]
+  monthlySchedules  MonthlySchedule[]
+  assignedTasks     ScheduledVisit[]  @relation("AssignedByManager")
+  receivedTasks     ScheduledVisit[]  @relation("AssignedToSupervisor")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -198,6 +224,8 @@ model NotImplementedReason {
   titleAr String @map("title_ar")
   titleEn String? @map("title_en")
 
+  visitInstances VisitInstance[]
+
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
@@ -276,7 +304,8 @@ model Branch {
   /// 1..4 — drives schedule generation in Phase 4.
   visitsPerMonth Int @default(1) @map("visits_per_month")
 
-  requiredTasks BranchRequiredTask[]
+  requiredTasks   BranchRequiredTask[]
+  scheduledVisits ScheduledVisit[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -311,6 +340,122 @@ model BranchRequiredTask {
 
 // Add the inverse of Region/City relations to branches (Prisma needs this)
 // Region.branches and City.branches are added below via separate model edits.
+
+// ============================================
+// SCHEDULING & VISIT EXECUTION — Phase 4
+// ============================================
+
+/// One per (supervisor, year, month). Holds the supervisor's full
+/// schedule of branch visits for that month. Drafts have publishedAt
+/// = NULL; once the admin "publishes", supervisors can see the schedule.
+model MonthlySchedule {
+  id           String @id @default(cuid())
+  supervisorId String @map("supervisor_id")
+  supervisor   User   @relation(fields: [supervisorId], references: [id])
+  year         Int
+  month        Int     // 1..12
+  publishedAt  DateTime? @map("published_at")
+
+  scheduledVisits ScheduledVisit[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([supervisorId, year, month])
+  @@index([deletedAt])
+  @@map("monthly_schedules")
+}
+
+/// Admin's input level. One row per (branch, schedule) for REGULAR
+/// type, or per ad-hoc assignment for ADDITIONAL type.
+/// The system generates one VisitInstance per V1/V2/V3/V4 from this row.
+model ScheduledVisit {
+  id   String             @id @default(cuid())
+  type ScheduledVisitType
+
+  /// REGULAR: required link to the schedule. ADDITIONAL: NULL.
+  monthlyScheduleId String?          @map("monthly_schedule_id")
+  monthlySchedule   MonthlySchedule? @relation(fields: [monthlyScheduleId], references: [id], onDelete: Cascade)
+
+  /// ADDITIONAL only: who assigned and to whom.
+  assignedByManagerId    String? @map("assigned_by_manager_id")
+  assignedByManager      User?   @relation("AssignedByManager", fields: [assignedByManagerId], references: [id])
+  assignedToSupervisorId String? @map("assigned_to_supervisor_id")
+  assignedToSupervisor   User?   @relation("AssignedToSupervisor", fields: [assignedToSupervisorId], references: [id])
+
+  branchId       String   @map("branch_id")
+  branch         Branch   @relation(fields: [branchId], references: [id])
+  numberOfVisits Int      @default(1) @map("number_of_visits")
+  firstVisitDate DateTime @map("first_visit_date") @db.Date
+
+  /// ADDITIONAL only: extra metadata.
+  price Decimal?
+  notes String?
+
+  visitInstances VisitInstance[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([monthlyScheduleId])
+  @@index([branchId])
+  @@index([type])
+  @@index([assignedToSupervisorId])
+  @@index([deletedAt])
+  @@map("scheduled_visits")
+}
+
+/// One per V1, V2, V3, V4 — the actual unit a supervisor visits.
+/// Status transitions are enforced in the service layer; once a
+/// terminal status is reached, locked_at is set and updates are refused.
+model VisitInstance {
+  id               String         @id @default(cuid())
+  scheduledVisitId String         @map("scheduled_visit_id")
+  scheduledVisit   ScheduledVisit @relation(fields: [scheduledVisitId], references: [id], onDelete: Cascade)
+  visitOrder       Int            @map("visit_order") // 1=V1, 2=V2, 3=V3, 4=V4
+  scheduledDate    DateTime       @map("scheduled_date") @db.Date
+
+  status              VisitStatus         @default(REMAINING)
+  documentationStatus DocumentationStatus @default(UNDOCUMENTED) @map("documentation_status")
+
+  notImplementedReasonId String?               @map("not_implemented_reason_id")
+  notImplementedReason   NotImplementedReason? @relation(fields: [notImplementedReasonId], references: [id])
+
+  /// Recorded automatically when the supervisor starts/finishes the visit.
+  startedAt       DateTime? @map("started_at")
+  endedAt         DateTime? @map("ended_at")
+  durationSeconds Int?      @map("duration_seconds")
+
+  /// GPS captured at start.
+  startLatitude  Decimal? @map("start_latitude")
+  startLongitude Decimal? @map("start_longitude")
+
+  /// For OTP-based documentation flow.
+  branchManagerPhone String? @map("branch_manager_phone")
+
+  /// Set when status reaches a terminal state. The service layer
+  /// refuses any update if locked_at IS NOT NULL.
+  lockedAt DateTime? @map("locked_at")
+
+  /// If this instance was auto-created because an earlier V was marked
+  /// FINAL_CLOSED, point to the source instance.
+  cascadedFromVisitInstanceId String?         @map("cascaded_from_visit_instance_id")
+  cascadedFromVisitInstance   VisitInstance?  @relation("VisitCascade", fields: [cascadedFromVisitInstanceId], references: [id])
+  cascadedTo                  VisitInstance[] @relation("VisitCascade")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([scheduledVisitId, visitOrder])
+  @@index([scheduledDate])
+  @@index([status])
+  @@index([lockedAt])
+  @@index([deletedAt])
+  @@map("visit_instances")
+}
 
 // ============================================
 // SYSTEM
