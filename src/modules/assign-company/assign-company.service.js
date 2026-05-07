@@ -449,13 +449,15 @@ const listCompanyBranches = async ({ companyName, q } = {}) => {
 
     return {
       id: rs.id,
-      regionTitle: rs.regionTitle,
       branchName: rs.branchName,
       branchNumber: rs.branchNumber,
       categoryName: rs.categoryName,
       city: rs.city,
       region: rs.region,
       address: rs.address,
+      location: rs.location,
+      latitude: rs.latitude,
+      longitude: rs.longitude,
       code: rs.code,
       isAssigned,
       assignedTo,

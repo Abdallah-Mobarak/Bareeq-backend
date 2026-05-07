@@ -63,13 +63,11 @@ const main = async () => {
     'POST',
     '/region-schedulings',
     {
-      regionTitle: 'Mobile Region',
       companyName: `MobileCo-${stamp}`,
       branchName: 'Mobile Branch',
       city: 'Riyadh',
       region: 'Central',
-      latitude: 24.7,
-      longitude: 46.7,
+      location: 'https://maps.google.com/?q=24.7,46.7',
       numberOfVisits: 3,
       requiredTasks: [
         { visitType: 1, titleAr: 'مهمة V1' },

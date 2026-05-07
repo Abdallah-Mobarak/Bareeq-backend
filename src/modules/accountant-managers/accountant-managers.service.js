@@ -17,11 +17,13 @@ const { logger } = require('../../utils/logger');
 
 const serializeBranch = (rs) => ({
   id: rs.id,
-  regionTitle: rs.regionTitle,
   branchName: rs.branchName,
   branchNumber: rs.branchNumber,
   city: rs.city,
   region: rs.region,
+  location: rs.location,
+  latitude: rs.latitude,
+  longitude: rs.longitude,
   code: rs.code,
 });
 

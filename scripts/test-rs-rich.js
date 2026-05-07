@@ -40,7 +40,6 @@ const main = async () => {
   // 2. Create 2 branches for company
   const mk = (n, m) =>
     j('POST', '/region-schedulings', {
-      regionTitle: 'R',
       companyName: company,
       branchName: n,
       city: 'Riyadh',

@@ -15,7 +15,6 @@ const { ApiError } = require('../../utils/ApiError');
  */
 
 const HEADER_ALIASES = {
-  regionTitle: ['region title', 'region_title', 'عنوان المنطقة', 'عنوان_المنطقة'],
   companyName: ['company name', 'company_name', 'اسم الشركة', 'الشركة'],
   branchName: ['branch name', 'branch_name', 'اسم الفرع', 'الفرع'],
   categoryName: ['category name', 'category_name', 'الفئة', 'القسم'],
@@ -23,8 +22,11 @@ const HEADER_ALIASES = {
   city: ['city', 'المدينة'],
   region: ['region', 'المنطقة'],
   address: ['address', 'العنوان'],
-  latitude: ['latitude', 'lat', 'خط العرض'],
-  longitude: ['longitude', 'lng', 'lon', 'خط الطول'],
+  /**
+   * `location` is a single free-text column. Admin pastes a Google
+   * Maps URL or "lat,lng" string. The service extracts coordinates.
+   */
+  location: ['location', 'map', 'maps', 'location url', 'الموقع', 'رابط الموقع'],
   numberOfVisits: ['number of visits', 'visits', 'عدد الزيارات'],
   code: ['code', 'الكود'],
   tasksV1: ['tasks_v1', 'tasks v1', 'مهام v1', 'مهام الزيارة الأولى'],
@@ -102,7 +104,7 @@ const parseExcelBuffer = async (buffer) => {
   const headerRow = sheet.getRow(1);
   const headerMap = buildHeaderMap(headerRow);
 
-  const required = ['regionTitle', 'companyName', 'branchName', 'city', 'region', 'numberOfVisits'];
+  const required = ['companyName', 'branchName', 'city', 'region', 'numberOfVisits'];
   const missing = required.filter((k) => !headerMap[k]);
   if (missing.length > 0) {
     throw ApiError.badRequest('Missing required columns', { missing });
@@ -118,14 +120,10 @@ const parseExcelBuffer = async (buffer) => {
     const get = (k) => cellValue(row, headerMap[k]);
     const numberOfVisits = Number(get('numberOfVisits'));
 
-    if (!get('regionTitle') || !get('companyName') || !get('branchName')) {
-      // Skip blank-ish rows silently — don't error on them
-      const looksBlank = !get('regionTitle') && !get('companyName') && !get('branchName');
-      if (looksBlank) continue;
-    }
+    // Skip fully blank rows silently
+    if (!get('companyName') && !get('branchName')) continue;
 
     const rowErrors = [];
-    if (!get('regionTitle')) rowErrors.push('regionTitle is required');
     if (!get('companyName')) rowErrors.push('companyName is required');
     if (!get('branchName')) rowErrors.push('branchName is required');
     if (!get('city')) rowErrors.push('city is required');
@@ -159,11 +157,7 @@ const parseExcelBuffer = async (buffer) => {
       continue;
     }
 
-    const lat = get('latitude');
-    const lng = get('longitude');
-
     rows.push({
-      regionTitle: String(get('regionTitle')).trim(),
       companyName: String(get('companyName')).trim(),
       branchName: String(get('branchName')).trim(),
       categoryName: get('categoryName') ? String(get('categoryName')).trim() : null,
@@ -171,8 +165,9 @@ const parseExcelBuffer = async (buffer) => {
       city: String(get('city')).trim(),
       region: String(get('region')).trim(),
       address: get('address') ? String(get('address')).trim() : null,
-      latitude: lat !== null && lat !== '' ? Number(lat) : null,
-      longitude: lng !== null && lng !== '' ? Number(lng) : null,
+      // location is the raw text. Service-layer extractLatLng() pulls
+      // numeric coordinates out of it.
+      location: get('location') ? String(get('location')).trim() : null,
       numberOfVisits,
       code: get('code') ? String(get('code')).trim() : null,
       requiredTasks,
@@ -194,7 +189,6 @@ const buildExcelBuffer = async (records) => {
   const sheet = workbook.addWorksheet('Region Schedulings');
 
   sheet.columns = [
-    { header: 'Region Title', key: 'regionTitle', width: 25 },
     { header: 'Company Name', key: 'companyName', width: 25 },
     { header: 'Branch Name', key: 'branchName', width: 25 },
     { header: 'Category Name', key: 'categoryName', width: 20 },
@@ -202,6 +196,7 @@ const buildExcelBuffer = async (records) => {
     { header: 'City', key: 'city', width: 15 },
     { header: 'Region', key: 'region', width: 15 },
     { header: 'Address', key: 'address', width: 30 },
+    { header: 'Location', key: 'location', width: 50 },
     { header: 'Latitude', key: 'latitude', width: 12 },
     { header: 'Longitude', key: 'longitude', width: 12 },
     { header: 'Number of Visits', key: 'numberOfVisits', width: 16 },
@@ -222,7 +217,6 @@ const buildExcelBuffer = async (records) => {
     });
 
     sheet.addRow({
-      regionTitle: r.regionTitle,
       companyName: r.companyName,
       branchName: r.branchName,
       categoryName: r.categoryName,
@@ -230,6 +224,7 @@ const buildExcelBuffer = async (records) => {
       city: r.city,
       region: r.region,
       address: r.address,
+      location: r.location,
       latitude: r.latitude,
       longitude: r.longitude,
       numberOfVisits: r.numberOfVisits,

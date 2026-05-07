@@ -260,7 +260,6 @@ model NotImplementedReason {
 /// when an admin assigns a supervisor and a start date.
 model RegionScheduling {
   id           String  @id @default(cuid())
-  regionTitle  String  @map("region_title")
   companyName  String  @map("company_name")
   branchName   String  @map("branch_name")
   categoryName String? @map("category_name")
@@ -268,6 +267,10 @@ model RegionScheduling {
   city         String
   region       String
   address      String?
+  /// Free-text location field. The admin pastes a Google Maps link
+  /// or "lat,lng" string here; the service parses out latitude /
+  /// longitude on save and keeps the original text for display.
+  location     String?
   latitude     Decimal?
   longitude    Decimal?
   /// 1..4 — drives how many V's are generated and the visit-type list.

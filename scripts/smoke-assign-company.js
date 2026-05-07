@@ -52,7 +52,6 @@ const main = async () => {
 
   // 2. create 2 region schedulings for "TestCo"
   const branch1 = await j('POST', '/region-schedulings', {
-    regionTitle: 'Region 1',
     companyName: 'TestCo',
     branchName: 'TestCo Branch 1',
     city: 'Cairo',
@@ -61,7 +60,6 @@ const main = async () => {
     requiredTasks: [{ visitType: 1, titleAr: 'مهمة 1' }],
   });
   const branch2 = await j('POST', '/region-schedulings', {
-    regionTitle: 'Region 2',
     companyName: 'TestCo',
     branchName: 'TestCo Branch 2',
     city: 'Cairo',

@@ -59,7 +59,6 @@ const main = async () => {
   const company = `SmokeCo-${stamp}`;
   const mkBranch = (name, n) =>
     j('POST', '/region-schedulings', {
-      regionTitle: 'Test Region',
       companyName: company,
       branchName: name,
       city: 'Cairo',

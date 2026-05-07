@@ -16,13 +16,15 @@ const serializeRegionScheduling = (rs) =>
   rs
     ? {
         id: rs.id,
-        regionTitle: rs.regionTitle,
         companyName: rs.companyName,
         branchName: rs.branchName,
         categoryName: rs.categoryName,
         branchNumber: rs.branchNumber,
         city: rs.city,
         region: rs.region,
+        location: rs.location,
+        latitude: rs.latitude,
+        longitude: rs.longitude,
         code: rs.code,
         numberOfVisits: rs.numberOfVisits,
       }

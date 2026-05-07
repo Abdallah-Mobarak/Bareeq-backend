@@ -183,7 +183,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"regionTitle\": \"Riyadh North\",\n  \"companyName\": \"Carrefour\",\n  \"branchName\": \"Granada Mall\",\n  \"categoryName\": \"Hypermarket\",\n  \"branchNumber\": \"BR-001\",\n  \"city\": \"Riyadh\",\n  \"region\": \"Central\",\n  \"address\": \"Eastern Ring Rd\",\n  \"latitude\": 24.7,\n  \"longitude\": 46.7,\n  \"numberOfVisits\": 2,\n  \"code\": \"CRF-001\",\n  \"requiredTasks\": [\n    { \"visitType\": 1, \"titleAr\": \"فحص الواجهة\", \"titleEn\": \"Inspect storefront\" },\n    { \"visitType\": 2, \"titleAr\": \"تدقيق المخزون\", \"titleEn\": \"Audit inventory\" }\n  ]\n}"
+              "raw": "{\n  \"companyName\": \"Carrefour\",\n  \"branchName\": \"Granada Mall\",\n  \"categoryName\": \"Hypermarket\",\n  \"branchNumber\": \"BR-001\",\n  \"city\": \"Riyadh\",\n  \"region\": \"Central\",\n  \"address\": \"Eastern Ring Rd\",\n  \"location\": \"https://maps.google.com/?q=24.7,46.7\",\n  \"numberOfVisits\": 2,\n  \"code\": \"CRF-001\",\n  \"requiredTasks\": [\n    { \"visitType\": 1, \"titleAr\": \"فحص الواجهة\", \"titleEn\": \"Inspect storefront\" },\n    { \"visitType\": 2, \"titleAr\": \"تدقيق المخزون\", \"titleEn\": \"Audit inventory\" }\n  ]\n}"
             }
           }
         },
@@ -211,7 +211,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"regionTitle\": \"East\",\n  \"companyName\": \"Lulu\",\n  \"branchName\": \"Branch A\",\n  \"city\": \"Dammam\",\n  \"region\": \"East\",\n  \"numberOfVisits\": 2\n}"
+              "raw": "{\n  \"companyName\": \"Lulu\",\n  \"branchName\": \"Branch A\",\n  \"city\": \"Dammam\",\n  \"region\": \"East\",\n  \"location\": \"24.5,46.8\",\n  \"numberOfVisits\": 2\n}"
             }
           }
         },

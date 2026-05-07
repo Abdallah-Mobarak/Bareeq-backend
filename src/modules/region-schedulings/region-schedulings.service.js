@@ -25,9 +25,65 @@ const serializeTask = (t) => ({
 const visitTypesFor = (numberOfVisits) =>
   Array.from({ length: numberOfVisits }, (_, i) => `V${i + 1}`);
 
+/**
+ * Pull (latitude, longitude) out of a free-text location string.
+ * Recognised shapes (in priority order):
+ *
+ *   1. Google Maps "place" URL:    .../@24.7,46.7,17z/...
+ *   2. Query-param style:           ?q=24.7,46.7  or  &q=24.7,46.7
+ *   3. Plain pair:                  "24.7, 46.7"  /  "24.7,46.7"
+ *
+ * Returns { latitude, longitude } as numbers, or { null, null } if
+ * nothing parseable was found. We never throw — an unparseable
+ * location is OK (the original text is still kept).
+ */
+const extractLatLng = (text) => {
+  if (!text || typeof text !== 'string') {
+    return { latitude: null, longitude: null };
+  }
+
+  const tryPair = (latStr, lngStr) => {
+    const lat = Number(latStr);
+    const lng = Number(lngStr);
+    if (
+      Number.isFinite(lat) &&
+      Number.isFinite(lng) &&
+      lat >= -90 &&
+      lat <= 90 &&
+      lng >= -180 &&
+      lng <= 180
+    ) {
+      return { latitude: lat, longitude: lng };
+    }
+    return null;
+  };
+
+  // 1. @lat,lng — Google Maps place URLs
+  let m = text.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+  if (m) {
+    const r = tryPair(m[1], m[2]);
+    if (r) return r;
+  }
+
+  // 2. q=lat,lng — query-param URLs
+  m = text.match(/[?&](?:q|ll|destination|center)=(-?\d+\.?\d*),(-?\d+\.?\d*)/i);
+  if (m) {
+    const r = tryPair(m[1], m[2]);
+    if (r) return r;
+  }
+
+  // 3. Plain "lat, lng" anywhere in the string
+  m = text.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
+  if (m) {
+    const r = tryPair(m[1], m[2]);
+    if (r) return r;
+  }
+
+  return { latitude: null, longitude: null };
+};
+
 const serialize = (rs) => ({
   id: rs.id,
-  regionTitle: rs.regionTitle,
   companyName: rs.companyName,
   branchName: rs.branchName,
   categoryName: rs.categoryName,
@@ -35,6 +91,7 @@ const serialize = (rs) => ({
   city: rs.city,
   region: rs.region,
   address: rs.address,
+  location: rs.location,
   latitude: rs.latitude,
   longitude: rs.longitude,
   numberOfVisits: rs.numberOfVisits,
@@ -66,9 +123,10 @@ const validateTasks = (numberOfVisits, tasks) => {
 const create = async (input) => {
   validateTasks(input.numberOfVisits, input.requiredTasks);
 
+  const { latitude, longitude } = extractLatLng(input.location);
+
   const created = await prisma.regionScheduling.create({
     data: {
-      regionTitle: input.regionTitle,
       companyName: input.companyName,
       branchName: input.branchName,
       categoryName: input.categoryName || null,
@@ -76,8 +134,9 @@ const create = async (input) => {
       city: input.city,
       region: input.region,
       address: input.address || null,
-      latitude: input.latitude ?? null,
-      longitude: input.longitude ?? null,
+      location: input.location || null,
+      latitude,
+      longitude,
       numberOfVisits: input.numberOfVisits,
       code: input.code || null,
       requiredTasks: input.requiredTasks?.length
@@ -94,7 +153,7 @@ const create = async (input) => {
     include: { requiredTasks: { orderBy: [{ visitType: 'asc' }, { sortOrder: 'asc' }] } },
   });
 
-  logger.info({ id: created.id }, 'RegionScheduling created');
+  logger.info({ id: created.id, hasCoords: latitude !== null }, 'RegionScheduling created');
   return serialize(created);
 };
 
@@ -109,10 +168,10 @@ const createMany = async (rows) => {
   }
 
   const created = await prisma.$transaction(
-    rows.map((row) =>
-      prisma.regionScheduling.create({
+    rows.map((row) => {
+      const { latitude, longitude } = extractLatLng(row.location);
+      return prisma.regionScheduling.create({
         data: {
-          regionTitle: row.regionTitle,
           companyName: row.companyName,
           branchName: row.branchName,
           categoryName: row.categoryName || null,
@@ -120,8 +179,9 @@ const createMany = async (rows) => {
           city: row.city,
           region: row.region,
           address: row.address || null,
-          latitude: row.latitude ?? null,
-          longitude: row.longitude ?? null,
+          location: row.location || null,
+          latitude,
+          longitude,
           numberOfVisits: row.numberOfVisits,
           code: row.code || null,
           requiredTasks: row.requiredTasks?.length
@@ -136,8 +196,8 @@ const createMany = async (rows) => {
             : undefined,
         },
         include: { requiredTasks: true },
-      }),
-    ),
+      });
+    }),
   );
 
   logger.info({ count: created.length }, 'RegionScheduling bulk-created');
@@ -168,7 +228,6 @@ const list = async ({
     deletedAt: null,
     ...(q && {
       OR: [
-        { regionTitle: { contains: q, mode: 'insensitive' } },
         { companyName: { contains: q, mode: 'insensitive' } },
         { branchName: { contains: q, mode: 'insensitive' } },
         { categoryName: { contains: q, mode: 'insensitive' } },
@@ -397,11 +456,19 @@ const update = async (id, input) => {
     validateTasks(newNumberOfVisits, input.requiredTasks);
   }
 
+  // If location is being updated, re-extract lat/lng from the new
+  // value (or null both if location is cleared).
+  const locationUpdates = (() => {
+    if (input.location === undefined) return {};
+    if (!input.location) return { location: null, latitude: null, longitude: null };
+    const { latitude, longitude } = extractLatLng(input.location);
+    return { location: input.location, latitude, longitude };
+  })();
+
   const updated = await prisma.$transaction(async (tx) => {
     await tx.regionScheduling.update({
       where: { id },
       data: {
-        ...(input.regionTitle !== undefined && { regionTitle: input.regionTitle }),
         ...(input.companyName !== undefined && { companyName: input.companyName }),
         ...(input.branchName !== undefined && { branchName: input.branchName }),
         ...(input.categoryName !== undefined && { categoryName: input.categoryName || null }),
@@ -409,8 +476,7 @@ const update = async (id, input) => {
         ...(input.city !== undefined && { city: input.city }),
         ...(input.region !== undefined && { region: input.region }),
         ...(input.address !== undefined && { address: input.address || null }),
-        ...(input.latitude !== undefined && { latitude: input.latitude ?? null }),
-        ...(input.longitude !== undefined && { longitude: input.longitude ?? null }),
+        ...locationUpdates,
         ...(input.numberOfVisits !== undefined && { numberOfVisits: input.numberOfVisits }),
         ...(input.code !== undefined && { code: input.code || null }),
       },

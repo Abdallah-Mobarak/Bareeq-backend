@@ -35,7 +35,6 @@ const serializeRow = (sv) => ({
   regionScheduling: sv.regionScheduling
     ? {
         id: sv.regionScheduling.id,
-        regionTitle: sv.regionScheduling.regionTitle,
         companyName: sv.regionScheduling.companyName,
         branchName: sv.regionScheduling.branchName,
         categoryName: sv.regionScheduling.categoryName,
@@ -43,6 +42,7 @@ const serializeRow = (sv) => ({
         city: sv.regionScheduling.city,
         region: sv.regionScheduling.region,
         address: sv.regionScheduling.address,
+        location: sv.regionScheduling.location,
         latitude: sv.regionScheduling.latitude,
         longitude: sv.regionScheduling.longitude,
         numberOfVisits: sv.regionScheduling.numberOfVisits,
