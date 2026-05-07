@@ -26,65 +26,12 @@ const serializeCompany = (c) => ({
 });
 
 /**
- * Atomic create: insert Company → insert COMPANY_USER linking back to it.
- * Either both succeed or neither does.
+ * NOTE: there is no `createCompany` here.
+ *
+ * Companies are created implicitly by `POST /assign-company` when the
+ * admin picks a previously-unassigned companyName. Direct creation is
+ * intentionally not supported — see companies.routes.js for the why.
  */
-const createCompany = async ({
-  nameAr,
-  nameEn,
-  contactEmail,
-  contactPhone,
-  loginEmail,
-  loginPhone,
-  loginPassword,
-}) => {
-  const conflict = await prisma.user.findFirst({
-    where: { OR: [{ email: loginEmail }, { phone: loginPhone }], deletedAt: null },
-  });
-  if (conflict) {
-    throw ApiError.conflict('Login email or phone already in use');
-  }
-
-  const passwordHash = await password.hash(loginPassword);
-
-  const company = await prisma.$transaction(async (tx) => {
-    const created = await tx.company.create({
-      data: {
-        nameAr,
-        nameEn: nameEn || null,
-        contactEmail: contactEmail || null,
-        contactPhone: contactPhone || null,
-      },
-    });
-
-    await tx.user.create({
-      data: {
-        email: loginEmail,
-        phone: loginPhone,
-        password: passwordHash,
-        role: 'COMPANY_USER',
-        status: 'ENABLED',
-        nameAr,
-        nameEn: nameEn || null,
-        companyId: created.id,
-      },
-    });
-
-    return tx.company.findUnique({
-      where: { id: created.id },
-      include: {
-        loginUsers: {
-          where: { deletedAt: null },
-          orderBy: { createdAt: 'asc' },
-          take: 1,
-        },
-      },
-    });
-  });
-
-  logger.info({ companyId: company.id }, 'Company created');
-  return serializeCompany(company);
-};
 
 const listCompanies = async ({ page, limit, q, sort }) => {
   const skip = (page - 1) * limit;
@@ -348,7 +295,6 @@ const updateCompanyStatus = async (id, status) => {
 };
 
 module.exports = {
-  createCompany,
   listCompanies,
   getCompany,
   updateCompany,

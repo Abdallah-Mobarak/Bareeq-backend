@@ -9,10 +9,16 @@ const Joi = require('joi');
  * because Saudi phone formats vary (+966, 05, etc.) and the FRD does not
  * pin a single shape down.
  */
+/**
+ * `clientType` distinguishes which client is logging in. Used to enforce
+ * "supervisors are mobile-only" — see auth.service.js. Defaults to "web"
+ * for backward compatibility (existing dashboard requests don't send it).
+ */
 const loginSchema = Joi.object({
   identifier: Joi.string().trim().min(3).max(100).required(),
   password: Joi.string().min(6).max(100).required(),
   deviceInfo: Joi.string().max(255).optional().allow(null, ''),
+  clientType: Joi.string().valid('web', 'mobile').default('web'),
 });
 
 /**

@@ -1,11 +1,6 @@
 const { asyncHandler } = require('../../utils/asyncHandler');
 const service = require('./companies.service');
 
-const create = asyncHandler(async (req, res) => {
-  const company = await service.createCompany(req.body);
-  res.status(201).json({ success: true, data: { company } });
-});
-
 const list = asyncHandler(async (req, res) => {
   const result = await service.listCompanies(req.validatedQuery);
   res.json({ success: true, data: result });
@@ -42,7 +37,6 @@ const updateStatus = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
-  create,
   list,
   getOne,
   update,

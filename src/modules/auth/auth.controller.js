@@ -14,6 +14,7 @@ const login = asyncHandler(async (req, res) => {
     identifier: req.body.identifier,
     password: req.body.password,
     deviceInfo: req.body.deviceInfo || req.get('user-agent') || null,
+    clientType: req.body.clientType,
   });
 
   res.json({

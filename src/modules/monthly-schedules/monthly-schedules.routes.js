@@ -6,7 +6,6 @@ const requireRole = require('../../middlewares/requireRole');
 const controller = require('./monthly-schedules.controller');
 const {
   createScheduleSchema,
-  updateScheduleSchema,
   listSchedulesQuerySchema,
   idParamSchema,
 } = require('./monthly-schedules.validation');
@@ -18,12 +17,6 @@ router.use(requireAuth, requireRole('ADMIN'));
 router.get('/', validate(listSchedulesQuerySchema, 'query'), controller.list);
 router.post('/', validate(createScheduleSchema), controller.create);
 router.get('/:id', validate(idParamSchema, 'params'), controller.getOne);
-router.patch(
-  '/:id',
-  validate(idParamSchema, 'params'),
-  validate(updateScheduleSchema),
-  controller.update,
-);
 router.delete('/:id', validate(idParamSchema, 'params'), controller.remove);
 
 module.exports = router;

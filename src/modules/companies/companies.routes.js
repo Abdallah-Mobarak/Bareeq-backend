@@ -5,7 +5,6 @@ const requireAuth = require('../../middlewares/requireAuth');
 const requireRole = require('../../middlewares/requireRole');
 const controller = require('./companies.controller');
 const {
-  createCompanySchema,
   updateCompanySchema,
   updateLoginSchema,
   changePasswordSchema,
@@ -18,8 +17,16 @@ const router = Router();
 
 router.use(requireAuth, requireRole('ADMIN'));
 
+/**
+ * NOTE: there is no POST /companies route.
+ *
+ * Per FRD §2.1 the only way a Company exists is through the
+ * Assign Company flow (POST /assign-company), which is fed by
+ * RegionScheduling.companyName. Letting the admin create Companies
+ * directly would create orphan rows that don't match any branch
+ * data — which is exactly what we don't want.
+ */
 router.get('/', validate(listCompaniesQuerySchema, 'query'), controller.list);
-router.post('/', validate(createCompanySchema), controller.create);
 router.get('/:id', validate(idParamSchema, 'params'), controller.getOne);
 router.patch(
   '/:id',

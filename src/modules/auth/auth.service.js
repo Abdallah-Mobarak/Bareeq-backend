@@ -57,7 +57,7 @@ const issueRefreshToken = async (userId, deviceInfo) => {
  * Error message is intentionally identical for "no user" and "wrong password"
  * so an attacker can't enumerate valid emails.
  */
-const login = async ({ identifier, password: plainPassword, deviceInfo }) => {
+const login = async ({ identifier, password: plainPassword, deviceInfo, clientType }) => {
   const field = isEmail(identifier) ? 'email' : 'phone';
 
   const user = await prisma.user.findFirst({
@@ -70,6 +70,48 @@ const login = async ({ identifier, password: plainPassword, deviceInfo }) => {
 
   if (user.status === 'BLOCKED') {
     throw ApiError.forbidden('Account is blocked');
+  }
+
+  /**
+   * Mobile-only / web-only enforcement (FRD §1.1 — Supervisor mobile app).
+   *
+   *   SUPERVISOR  → mobile only. The dashboard never has a use case for them.
+   *   ADMIN       → web only. They manage the platform from the dashboard.
+   *   MANAGER     → web only.
+   *   COMPANY_USER, ACCOUNTANT_MANAGER → currently web only.
+   *
+   * If we add roles that span both surfaces later, we extend this map.
+   * Generic "Invalid credentials" message — don't leak whether the role
+   * exists; just say "you can't log in here".
+   */
+  const ROLE_CLIENT_MAP = {
+    SUPERVISOR: 'mobile',
+    ADMIN: 'web',
+    MANAGER: 'web',
+    COMPANY_USER: 'web',
+    ACCOUNTANT_MANAGER: 'web',
+  };
+  const expectedClient = ROLE_CLIENT_MAP[user.role];
+  if (expectedClient && clientType !== expectedClient) {
+    throw ApiError.forbidden(
+      expectedClient === 'mobile'
+        ? 'This account can only log in from the mobile application'
+        : 'This account can only log in from the dashboard',
+    );
+  }
+
+  /**
+   * FRD §2 (Accountant Manager) FR-4 / FR-5: an AM cannot log in if the
+   * parent Company's primary login user is blocked or missing. We treat
+   * that as the company being "disabled" without adding a separate flag.
+   */
+  if (user.role === 'ACCOUNTANT_MANAGER' && user.companyId) {
+    const companyLoginUser = await prisma.user.findFirst({
+      where: { companyId: user.companyId, role: 'COMPANY_USER', deletedAt: null },
+    });
+    if (!companyLoginUser || companyLoginUser.status === 'BLOCKED') {
+      throw ApiError.forbidden('Your company account is disabled');
+    }
   }
 
   const passwordOk = await password.compare(plainPassword, user.password);

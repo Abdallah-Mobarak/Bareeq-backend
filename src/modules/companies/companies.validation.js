@@ -13,23 +13,6 @@ const emailSchema = Joi.string()
   .messages({ 'string.pattern.base': '"email" must be a valid email' });
 
 /**
- * POST /companies — admin only.
- * Creates Company + a COMPANY_USER login atomically.
- */
-const createCompanySchema = Joi.object({
-  // Company entity fields
-  nameAr: Joi.string().trim().min(2).max(200).required(),
-  nameEn: Joi.string().trim().max(200).optional().allow(null, ''),
-  contactEmail: emailSchema.optional().allow(null, ''),
-  contactPhone: phoneSchema.optional().allow(null, ''),
-
-  // Login user fields
-  loginEmail: emailSchema.required(),
-  loginPhone: phoneSchema.required(),
-  loginPassword: Joi.string().min(8).max(100).required(),
-});
-
-/**
  * PATCH /companies/:id
  * Updates the company entity. The login user is updated via separate
  * endpoints (similar to managers/supervisors).
@@ -66,7 +49,6 @@ const idParamSchema = Joi.object({
 });
 
 module.exports = {
-  createCompanySchema,
   updateCompanySchema,
   updateLoginSchema,
   changePasswordSchema,

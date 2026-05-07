@@ -16,14 +16,9 @@ const getOne = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { schedule } });
 });
 
-const update = asyncHandler(async (req, res) => {
-  const schedule = await service.updateSchedule(req.params.id, req.body);
-  res.json({ success: true, data: { schedule } });
-});
-
 const remove = asyncHandler(async (req, res) => {
   await service.deleteSchedule(req.params.id);
   res.json({ success: true, data: { message: 'Monthly schedule deleted' } });
 });
 
-module.exports = { create, list, getOne, update, remove };
+module.exports = { create, list, getOne, remove };

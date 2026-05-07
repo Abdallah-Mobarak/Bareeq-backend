@@ -1,0 +1,604 @@
+{
+  "info": {
+    "name": "Bareeq Mobile — Supervisor Flow",
+    "description": "Mobile-app endpoints for the supervisor: login (mobile-only), schedule reads, and visit execution (start / final-closed / not-implemented / complete / tasks / photos). Run requests top-to-bottom; later requests reuse ids stashed by earlier ones into the environment.\n\nPrerequisites:\n• Run the Sprint 1 collection first to seed admin, region schedulings, and a monthly schedule for some supervisor.\n• Set `supervisorEmail` and `supervisorPassword` in the environment (the supervisor that has the schedule).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{supervisorToken}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "00 — Auth",
+      "item": [
+        {
+          "name": "POST /auth/login (supervisor — mobile)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success) {",
+                  "  pm.environment.set('supervisorToken', j.data.accessToken);",
+                  "  pm.environment.set('supervisorId', j.data.user.id);",
+                  "  console.log('✅ supervisor logged in via mobile');",
+                  "} else {",
+                  "  console.log('❌ login failed:', JSON.stringify(j));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{supervisorEmail}}\",\n  \"password\": \"{{supervisorPassword}}\",\n  \"clientType\": \"mobile\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST /auth/login (supervisor — web, MUST FAIL 403)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{supervisorEmail}}\",\n  \"password\": \"{{supervisorPassword}}\",\n  \"clientType\": \"web\"\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /auth/me (current supervisor)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/auth/me", "host": ["{{baseUrl}}"], "path": ["auth", "me"] }
+          }
+        },
+        {
+          "name": "POST /auth/logout",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/logout", "host": ["{{baseUrl}}"], "path": ["auth", "logout"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "01 — My Schedule (FRD §1.2.1)",
+      "item": [
+        {
+          "name": "GET /supervisor/my-schedule (current month summary)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/supervisor/my-schedule",
+              "host": ["{{baseUrl}}"],
+              "path": ["supervisor", "my-schedule"]
+            }
+          }
+        },
+        {
+          "name": "GET /supervisor/my-schedule (specific month)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/supervisor/my-schedule?year=2026&month=8",
+              "host": ["{{baseUrl}}"],
+              "path": ["supervisor", "my-schedule"],
+              "query": [
+                { "key": "year", "value": "2026" },
+                { "key": "month", "value": "8" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /supervisor/my-schedule/branches",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success && j.data.items.length > 0) {",
+                  "  const sv = j.data.items[0];",
+                  "  pm.environment.set('scheduledVisitId', sv.id);",
+                  "  if (sv.instances[0]) pm.environment.set('v1Id', sv.instances[0].id);",
+                  "  if (sv.instances[1]) pm.environment.set('v2Id', sv.instances[1].id);",
+                  "  if (sv.instances[2]) pm.environment.set('v3Id', sv.instances[2].id);",
+                  "  console.log('✅ stashed scheduledVisitId + v1/v2/v3 ids');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/supervisor/my-schedule/branches?year=2026&month=8",
+              "host": ["{{baseUrl}}"],
+              "path": ["supervisor", "my-schedule", "branches"],
+              "query": [
+                { "key": "year", "value": "2026" },
+                { "key": "month", "value": "8" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /supervisor/my-schedule/branches (search)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/supervisor/my-schedule/branches?q=Carrefour",
+              "host": ["{{baseUrl}}"],
+              "path": ["supervisor", "my-schedule", "branches"],
+              "query": [{ "key": "q", "value": "Carrefour" }]
+            }
+          }
+        },
+        {
+          "name": "GET /supervisor/my-schedule/branches (filters)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/supervisor/my-schedule/branches?city=Riyadh&visitType=2&dateFrom=2026-08-01&dateTo=2026-08-31",
+              "host": ["{{baseUrl}}"],
+              "path": ["supervisor", "my-schedule", "branches"],
+              "query": [
+                { "key": "city", "value": "Riyadh" },
+                { "key": "visitType", "value": "2" },
+                { "key": "dateFrom", "value": "2026-08-01" },
+                { "key": "dateTo", "value": "2026-08-31" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /supervisor/my-schedule/branches (sort by nearest GPS)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/supervisor/my-schedule/branches?nearestLat=24.71&nearestLng=46.71&sort=nearest",
+              "host": ["{{baseUrl}}"],
+              "path": ["supervisor", "my-schedule", "branches"],
+              "query": [
+                { "key": "nearestLat", "value": "24.71" },
+                { "key": "nearestLng", "value": "46.71" },
+                { "key": "sort", "value": "nearest" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /supervisor/branches/:scheduledVisitId (detail — FRD §1.2.4)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success) {",
+                  "  console.log('Branch:', j.data.regionScheduling.branchName);",
+                  "  j.data.instances.forEach(i => console.log(`  V${i.visitOrder}: ${i.status}`));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/supervisor/branches/{{scheduledVisitId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["supervisor", "branches", "{{scheduledVisitId}}"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "02 — Visit Execution (FRD §1.2.3.1)",
+      "item": [
+        {
+          "name": "POST /visit-instances/:v1/start (REMAINING → UNDERWAY)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success && j.data.taskChecks?.[0]) {",
+                  "  pm.environment.set('taskCheckId', j.data.taskChecks[0].id);",
+                  "  console.log('✅ V1 underway, taskCheckId stashed');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/visit-instances/{{v1Id}}/start",
+              "host": ["{{baseUrl}}"],
+              "path": ["visit-instances", "{{v1Id}}", "start"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": 24.711,\n  \"longitude\": 46.712\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH /visit-instances/:v1/tasks/:taskCheckId  (mark done)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/visit-instances/{{v1Id}}/tasks/{{taskCheckId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["visit-instances", "{{v1Id}}", "tasks", "{{taskCheckId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"done\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "POST /visit-instances/:v1/photos  (multipart — up to 4)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success && j.data.photos?.[0]) {",
+                  "  pm.environment.set('photoId', j.data.photos[0].id);",
+                  "  console.log('✅ photos uploaded:', j.data.photos.length);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/visit-instances/{{v1Id}}/photos",
+              "host": ["{{baseUrl}}"],
+              "path": ["visit-instances", "{{v1Id}}", "photos"]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "photos", "type": "file", "src": [], "description": "JPEG / PNG / WebP, up to 4 files, 5MB each" }
+              ]
+            },
+            "description": "Field name MUST be `photos`. Pick 1–4 image files."
+          }
+        },
+        {
+          "name": "DELETE /visit-instances/:v1/photos/:photoId",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/visit-instances/{{v1Id}}/photos/{{photoId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["visit-instances", "{{v1Id}}", "photos", "{{photoId}}"]
+            }
+          }
+        },
+        {
+          "name": "POST /visit-instances/:v1/complete (UNDERWAY → IMPLEMENTED)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/visit-instances/{{v1Id}}/complete",
+              "host": ["{{baseUrl}}"],
+              "path": ["visit-instances", "{{v1Id}}", "complete"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "03 — Alternate Endings (FRD §2.1)",
+      "item": [
+        {
+          "name": "POST /visit-instances/:v2/final-closed  (cascades subsequent V's)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/visit-instances/{{v2Id}}/final-closed",
+              "host": ["{{baseUrl}}"],
+              "path": ["visit-instances", "{{v2Id}}", "final-closed"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "POST /visit-instances/:v3/not-implemented  (with reason)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/visit-instances/{{v3Id}}/not-implemented",
+              "host": ["{{baseUrl}}"],
+              "path": ["visit-instances", "{{v3Id}}", "not-implemented"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notImplementedReasonId\": \"{{reasonId}}\"\n}"
+            },
+            "description": "Set `reasonId` first by running the admin Reasons-list call from the main collection."
+          }
+        },
+        {
+          "name": "POST /visit-instances/:v3/not-implemented  (UPDATE reason — §3.2 exception)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/visit-instances/{{v3Id}}/not-implemented",
+              "host": ["{{baseUrl}}"],
+              "path": ["visit-instances", "{{v3Id}}", "not-implemented"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notImplementedReasonId\": \"{{reasonId}}\"\n}"
+            },
+            "description": "Re-running this endpoint after the visit is already NOT_IMPLEMENTED updates the reason (FRD §3.2 immutability exception)."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "04 — Negative Tests",
+      "item": [
+        {
+          "name": "Start V2 before V1 done (MUST FAIL 400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/visit-instances/{{v2Id}}/start",
+              "host": ["{{baseUrl}}"],
+              "path": ["visit-instances", "{{v2Id}}", "start"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": 24.71,\n  \"longitude\": 46.71\n}"
+            },
+            "description": "FRD §1.3 — visits must be in order. V1 must reach a terminal status before V2 can start."
+          }
+        },
+        {
+          "name": "Complete V1 with no task done (MUST FAIL 400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/visit-instances/{{v1Id}}/complete",
+              "host": ["{{baseUrl}}"],
+              "path": ["visit-instances", "{{v1Id}}", "complete"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "description": "FRD §2.3 — at least one task must be checked done before completing."
+          }
+        },
+        {
+          "name": "Final-close after start (MUST FAIL 409)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/visit-instances/{{v1Id}}/final-closed",
+              "host": ["{{baseUrl}}"],
+              "path": ["visit-instances", "{{v1Id}}", "final-closed"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "description": "FRD §2.1 — final-closed must be chosen BEFORE clicking Start Visit."
+          }
+        },
+        {
+          "name": "Upload 5+ photos (MUST FAIL 400 — cap is 4)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/visit-instances/{{v1Id}}/photos",
+              "host": ["{{baseUrl}}"],
+              "path": ["visit-instances", "{{v1Id}}", "photos"]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "photos", "type": "file", "src": [] },
+                { "key": "photos", "type": "file", "src": [] },
+                { "key": "photos", "type": "file", "src": [] },
+                { "key": "photos", "type": "file", "src": [] },
+                { "key": "photos", "type": "file", "src": [] }
+              ]
+            },
+            "description": "Cap is 4 photos per visit — 5th is rejected at the multer layer or at the cumulative-count check."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "05 — Documentation Flow (FRD §1.2.3.1 §2.5)",
+      "description": "OTP + branch-manager public link + PDF + supervisor verification.\n\nPrerequisite: V1 must already be IMPLEMENTED (run folder 02 first).",
+      "item": [
+        {
+          "name": "POST /visit-instances/:v1/document/send-otp  (supervisor)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success) {",
+                  "  pm.environment.set('docOtp', j.data.otp);",
+                  "  pm.environment.set('docToken', j.data.documentationUrl.split('/').pop());",
+                  "  pm.environment.set('docUrl', j.data.documentationUrl);",
+                  "  console.log('✅ OTP:', j.data.otp);",
+                  "  console.log('✅ URL:', j.data.documentationUrl);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/visit-instances/{{v1Id}}/document/send-otp",
+              "host": ["{{baseUrl}}"],
+              "path": ["visit-instances", "{{v1Id}}", "document", "send-otp"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchManagerPhone\": \"+966501234567\"\n}"
+            },
+            "description": "MVP: OTP and documentation URL are returned in the response (and logged). In production they'd only go to SMS."
+          }
+        },
+        {
+          "name": "GET /public/document/:token  (no auth, branch manager view)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/public/document/{{docToken}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["public", "document", "{{docToken}}"]
+            },
+            "description": "Branch manager opens this URL — no login, no JWT. Returns visit + branch + supervisor + photos + tasks."
+          }
+        },
+        {
+          "name": "POST /public/document/:token/submit  (no auth, branch manager fills form)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/public/document/{{docToken}}/submit",
+              "host": ["{{baseUrl}}"],
+              "path": ["public", "document", "{{docToken}}", "submit"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jobNumber\": \"JOB-12345\",\n  \"rating\": 5,\n  \"comments\": \"تمت الزيارة بشكل ممتاز\"\n}"
+            },
+            "description": "Branch manager fills jobNumber + rating + comments. documentationStatus stays UNDOCUMENTED until the supervisor verifies the OTP."
+          }
+        },
+        {
+          "name": "GET /public/document/:token/pdf  (no auth, downloads PDF)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/public/document/{{docToken}}/pdf",
+              "host": ["{{baseUrl}}"],
+              "path": ["public", "document", "{{docToken}}", "pdf"]
+            },
+            "description": "Returns application/pdf — Postman/Apidog will offer to save the file. PDF includes branch, supervisor, tasks (with tick marks), and documentation answers."
+          }
+        },
+        {
+          "name": "POST /visit-instances/:v1/document/verify-otp  (supervisor → DOCUMENTED)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/visit-instances/{{v1Id}}/document/verify-otp",
+              "host": ["{{baseUrl}}"],
+              "path": ["visit-instances", "{{v1Id}}", "document", "verify-otp"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"otp\": \"{{docOtp}}\"\n}"
+            },
+            "description": "If OTP matches and is still valid → documentationStatus flips to DOCUMENTED + documentedAt is set + the OTP is burned (single-use)."
+          }
+        },
+        {
+          "name": "POST verify-otp again (MUST FAIL 400 — OTP burned)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/visit-instances/{{v1Id}}/document/verify-otp",
+              "host": ["{{baseUrl}}"],
+              "path": ["visit-instances", "{{v1Id}}", "document", "verify-otp"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"otp\": \"{{docOtp}}\"\n}"
+            },
+            "description": "After successful verification the OTP is cleared and the visit is documented — re-running this endpoint returns 400 'No OTP has been issued'."
+          }
+        },
+        {
+          "name": "POST /public/document/:token/submit again (MUST FAIL 409)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/public/document/{{docToken}}/submit",
+              "host": ["{{baseUrl}}"],
+              "path": ["public", "document", "{{docToken}}", "submit"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jobNumber\": \"JOB-RETRY\",\n  \"rating\": 3\n}"
+            },
+            "description": "Once the visit is DOCUMENTED, the public form is locked — branch manager can't change their answers anymore."
+          }
+        }
+      ]
+    }
+  ]
+}

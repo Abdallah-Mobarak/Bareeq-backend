@@ -1,0 +1,75 @@
+const Joi = require('joi');
+
+/**
+ * Required tasks for a region scheduling row, grouped by visit type.
+ * `visitType` 1..4 must align with the parent's `numberOfVisits`
+ * (validated at service layer for cross-field reasoning).
+ */
+const requiredTaskSchema = Joi.object({
+  visitType: Joi.number().integer().min(1).max(4).required(),
+  titleAr: Joi.string().trim().min(1).max(300).required(),
+  titleEn: Joi.string().trim().max(300).optional().allow(null, ''),
+  sortOrder: Joi.number().integer().min(0).optional(),
+});
+
+const createSchema = Joi.object({
+  regionTitle: Joi.string().trim().min(1).max(150).required(),
+  companyName: Joi.string().trim().min(1).max(200).required(),
+  branchName: Joi.string().trim().min(1).max(200).required(),
+  categoryName: Joi.string().trim().max(150).optional().allow(null, ''),
+  branchNumber: Joi.string().trim().max(50).optional().allow(null, ''),
+  city: Joi.string().trim().min(1).max(150).required(),
+  region: Joi.string().trim().min(1).max(150).required(),
+  address: Joi.string().trim().max(500).optional().allow(null, ''),
+  latitude: Joi.number().min(-90).max(90).optional().allow(null),
+  longitude: Joi.number().min(-180).max(180).optional().allow(null),
+  numberOfVisits: Joi.number().integer().min(1).max(4).required(),
+  code: Joi.string().trim().max(50).optional().allow(null, ''),
+  requiredTasks: Joi.array().items(requiredTaskSchema).max(50).default([]),
+});
+
+const updateSchema = Joi.object({
+  regionTitle: Joi.string().trim().min(1).max(150).optional(),
+  companyName: Joi.string().trim().min(1).max(200).optional(),
+  branchName: Joi.string().trim().min(1).max(200).optional(),
+  categoryName: Joi.string().trim().max(150).optional().allow(null, ''),
+  branchNumber: Joi.string().trim().max(50).optional().allow(null, ''),
+  city: Joi.string().trim().min(1).max(150).optional(),
+  region: Joi.string().trim().min(1).max(150).optional(),
+  address: Joi.string().trim().max(500).optional().allow(null, ''),
+  latitude: Joi.number().min(-90).max(90).optional().allow(null),
+  longitude: Joi.number().min(-180).max(180).optional().allow(null),
+  numberOfVisits: Joi.number().integer().min(1).max(4).optional(),
+  code: Joi.string().trim().max(50).optional().allow(null, ''),
+  requiredTasks: Joi.array().items(requiredTaskSchema).max(50).optional(),
+}).min(1);
+
+/**
+ * GET /region-schedulings — query string.
+ * Filters mirror FRD §1.6 + §1.7 (filter + search criteria).
+ */
+const listQuerySchema = Joi.object({
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(100).default(20),
+  q: Joi.string().trim().max(100).optional().allow(''),
+  region: Joi.string().trim().max(150).optional().allow(''),
+  companyName: Joi.string().trim().max(200).optional().allow(''),
+  branchName: Joi.string().trim().max(200).optional().allow(''),
+  categoryName: Joi.string().trim().max(150).optional().allow(''),
+  branchNumber: Joi.string().trim().max(50).optional().allow(''),
+  city: Joi.string().trim().max(150).optional().allow(''),
+  visitType: Joi.number().integer().min(1).max(4).optional(),
+  code: Joi.string().trim().max(50).optional().allow(''),
+  sort: Joi.string().valid('newest', 'oldest').default('newest'),
+});
+
+const idParamSchema = Joi.object({
+  id: Joi.string().required(),
+});
+
+module.exports = {
+  createSchema,
+  updateSchema,
+  listQuerySchema,
+  idParamSchema,
+};

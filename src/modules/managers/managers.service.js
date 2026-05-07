@@ -24,7 +24,8 @@ const serializeManager = (user) => ({
 
 /**
  * Throws ApiError.badRequest if `permissionRoleId` is set but doesn't
- * exist or doesn't apply to managers.
+ * exist. Roles aren't bound to a user type per FRD §4.2.1.2 — the admin
+ * picks any role from the unified list.
  */
 const validatePermissionRole = async (permissionRoleId) => {
   if (!permissionRoleId) {
@@ -37,9 +38,6 @@ const validatePermissionRole = async (permissionRoleId) => {
 
   if (!role) {
     throw ApiError.badRequest('Permission role not found');
-  }
-  if (role.appliesTo !== 'MANAGER') {
-    throw ApiError.badRequest('This permission role is not assignable to managers');
   }
 };
 

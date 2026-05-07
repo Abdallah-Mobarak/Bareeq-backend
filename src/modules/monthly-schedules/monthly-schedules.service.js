@@ -4,19 +4,27 @@ const { logger } = require('../../utils/logger');
 const { distributeVisitDates } = require('../../utils/scheduleDistribution');
 
 /**
- * Trim a User into the small payload we ever expose for a supervisor.
+ * MonthlySchedule — produced by the "Assign Supervisor" flow described
+ * in FRD §4.2.2.2.1 §3. Each ScheduledVisit references a RegionScheduling
+ * (the standalone entity), NOT the legacy Branch table.
  */
+
 const serializeSupervisor = (u) =>
   u ? { id: u.id, email: u.email, phone: u.phone, nameAr: u.nameAr, nameEn: u.nameEn } : null;
 
-const serializeBranch = (b) =>
-  b
+const serializeRegionScheduling = (rs) =>
+  rs
     ? {
-        id: b.id,
-        nameAr: b.nameAr,
-        nameEn: b.nameEn,
-        branchNumber: b.branchNumber,
-        code: b.code,
+        id: rs.id,
+        regionTitle: rs.regionTitle,
+        companyName: rs.companyName,
+        branchName: rs.branchName,
+        categoryName: rs.categoryName,
+        branchNumber: rs.branchNumber,
+        city: rs.city,
+        region: rs.region,
+        code: rs.code,
+        numberOfVisits: rs.numberOfVisits,
       }
     : null;
 
@@ -32,8 +40,8 @@ const serializeInstance = (i) => ({
 const serializeScheduledVisit = (sv) => ({
   id: sv.id,
   type: sv.type,
-  branchId: sv.branchId,
-  branch: serializeBranch(sv.branch),
+  regionSchedulingId: sv.regionSchedulingId,
+  regionScheduling: serializeRegionScheduling(sv.regionScheduling),
   numberOfVisits: sv.numberOfVisits,
   firstVisitDate: sv.firstVisitDate,
   instances: sv.visitInstances?.map(serializeInstance) ?? [],
@@ -51,10 +59,6 @@ const serializeSchedule = (s) => ({
   updatedAt: s.updatedAt,
 });
 
-/**
- * Cross-cutting validations for createSchedule / updateSchedule.
- * Throws on the first problem so the client sees one clear message.
- */
 const ensureSupervisor = async (supervisorId) => {
   const u = await prisma.user.findFirst({
     where: { id: supervisorId, role: 'SUPERVISOR', deletedAt: null },
@@ -65,31 +69,73 @@ const ensureSupervisor = async (supervisorId) => {
   return u;
 };
 
-const ensureBranch = async (branchId) => {
-  const b = await prisma.branch.findFirst({
-    where: { id: branchId, deletedAt: null },
+const ensureRegionScheduling = async (regionSchedulingId) => {
+  const rs = await prisma.regionScheduling.findFirst({
+    where: { id: regionSchedulingId, deletedAt: null },
   });
-  if (!b) {
-    throw ApiError.badRequest(`Branch not found: ${branchId}`);
+  if (!rs) {
+    throw ApiError.badRequest(`Region scheduling not found: ${regionSchedulingId}`);
   }
-  return b;
+  return rs;
 };
 
 /**
- * Create a full monthly schedule for a supervisor in one transaction.
- *
- * Steps:
- *   1. Validate supervisor.
- *   2. Validate (supervisor, year, month) doesn't already have an active schedule.
- *   3. For each scheduledVisit input:
- *      - validate branch exists
- *      - validate firstVisitDate falls inside (year, month)
- *      - call distributeVisitDates() to compute V1..Vn dates
- *   4. Insert MonthlySchedule + N ScheduledVisits + sum(M_i) VisitInstances.
- *      One transaction — all-or-nothing.
+ * Pull the (year, month) shared by every date in a list. Throws if
+ * they don't all sit in the same calendar month — a MonthlySchedule
+ * is by definition single-month.
  */
-const createSchedule = async ({ supervisorId, year, month, publish, scheduledVisits }) => {
+const deriveYearMonth = (dates) => {
+  const ref = dates[0];
+  const year = ref.getUTCFullYear();
+  const month = ref.getUTCMonth() + 1;
+  for (const d of dates) {
+    if (d.getUTCFullYear() !== year || d.getUTCMonth() + 1 !== month) {
+      throw ApiError.badRequest(
+        'All visit dates must fall in the same calendar month',
+        {
+          firstDate: ref.toISOString(),
+          conflictingDate: d.toISOString(),
+        },
+      );
+    }
+  }
+  return { year, month };
+};
+
+/**
+ * Create a full monthly schedule for a supervisor — "Assign Supervisor"
+ * flow.
+ *
+ * The admin sends one date globally (`applyToAllDate`) or per-branch
+ * (`firstVisitDate`), or a mix (per-branch wins, applyToAllDate fills
+ * the rest). The system:
+ *   1. Resolves each branch's first-visit date.
+ *   2. Derives (year, month) from the resolved dates and asserts they
+ *      all fall in the same month.
+ *   3. Reads `numberOfVisits` from each RegionScheduling — admin can't
+ *      override it; that's an attribute of the branch itself.
+ *   4. Generates V1..Vn dates via distributeVisitDates.
+ *   5. Writes MonthlySchedule + ScheduledVisits + VisitInstances in
+ *      one tx, with publishedAt = now (no draft mode).
+ */
+const createSchedule = async ({ supervisorId, applyToAllDate, scheduledVisits }) => {
   await ensureSupervisor(supervisorId);
+
+  // Step 1: resolve each branch's firstVisitDate.
+  const fallback = applyToAllDate ? new Date(applyToAllDate) : null;
+  const resolvedDates = scheduledVisits.map((input, idx) => {
+    const raw = input.firstVisitDate || fallback;
+    if (!raw) {
+      // Shouldn't happen — validator already enforces this.
+      throw ApiError.badRequest(
+        `scheduledVisits[${idx}] is missing a firstVisitDate and no applyToAllDate was set`,
+      );
+    }
+    return new Date(raw);
+  });
+
+  // Step 2: derive year/month and validate same-month invariant.
+  const { year, month } = deriveYearMonth(resolvedDates);
 
   const existing = await prisma.monthlySchedule.findFirst({
     where: { supervisorId, year, month, deletedAt: null },
@@ -98,41 +144,68 @@ const createSchedule = async ({ supervisorId, year, month, publish, scheduledVis
     throw ApiError.conflict('A schedule already exists for this supervisor and month');
   }
 
-  // Validate every branch up front, in parallel — independent reads.
-  await Promise.all(scheduledVisits.map((input) => ensureBranch(input.branchId)));
+  // Step 3: validate every region scheduling up front, in parallel.
+  const regionSchedulings = await Promise.all(
+    scheduledVisits.map((input) => ensureRegionScheduling(input.regionSchedulingId)),
+  );
 
-  // Compute distributions synchronously (no DB calls — pure validation/math).
-  const computed = scheduledVisits.map((input) => {
-    const first = new Date(input.firstVisitDate);
-    if (first.getUTCFullYear() !== year || first.getUTCMonth() + 1 !== month) {
-      throw ApiError.badRequest(
-        `firstVisitDate ${input.firstVisitDate} is outside ${year}-${String(month).padStart(2, '0')}`,
-      );
-    }
-    const dates = distributeVisitDates(input.numberOfVisits, first);
-    return { input, first, dates };
+  /**
+   * FRD §4.2.2.2.1 §3 FR-89: a single RegionScheduling cannot live in
+   * two supervisors' schedules in the same calendar month.
+   */
+  const requestedIds = scheduledVisits.map((sv) => sv.regionSchedulingId);
+  const overlapping = await prisma.scheduledVisit.findMany({
+    where: {
+      regionSchedulingId: { in: requestedIds },
+      deletedAt: null,
+      monthlySchedule: { year, month, deletedAt: null },
+    },
+    include: {
+      monthlySchedule: {
+        include: { supervisor: { select: { id: true, nameAr: true } } },
+      },
+    },
+  });
+  if (overlapping.length > 0) {
+    throw ApiError.conflict(
+      'Some branches are already scheduled for this month under another supervisor',
+      {
+        conflicts: overlapping.map((sv) => ({
+          regionSchedulingId: sv.regionSchedulingId,
+          supervisorId: sv.monthlySchedule.supervisor.id,
+          supervisorName: sv.monthlySchedule.supervisor.nameAr,
+        })),
+      },
+    );
+  }
+
+  // Step 4: build per-branch plan — numberOfVisits comes from RS, not input.
+  const computed = scheduledVisits.map((input, idx) => {
+    const rs = regionSchedulings[idx];
+    const first = resolvedDates[idx];
+    const dates = distributeVisitDates(rs.numberOfVisits, first);
+    return { input, first, dates, numberOfVisits: rs.numberOfVisits };
   });
 
+  // Step 5: write everything atomically.
   const schedule = await prisma.$transaction(async (tx) => {
     const created = await tx.monthlySchedule.create({
       data: {
         supervisorId,
         year,
         month,
-        publishedAt: publish ? new Date() : null,
+        publishedAt: new Date(),
       },
     });
 
-    // Sequential is intentional: each iteration writes to the same
-    // transaction. Parallelising inside a Prisma tx is not safe.
     for (const c of computed) {
       // eslint-disable-next-line no-await-in-loop
       const sv = await tx.scheduledVisit.create({
         data: {
           type: 'REGULAR',
           monthlyScheduleId: created.id,
-          branchId: c.input.branchId,
-          numberOfVisits: c.input.numberOfVisits,
+          regionSchedulingId: c.input.regionSchedulingId,
+          numberOfVisits: c.numberOfVisits,
           firstVisitDate: c.first,
         },
       });
@@ -154,7 +227,7 @@ const createSchedule = async ({ supervisorId, year, month, publish, scheduledVis
         scheduledVisits: {
           where: { deletedAt: null },
           include: {
-            branch: true,
+            regionScheduling: true,
             visitInstances: {
               where: { deletedAt: null },
               orderBy: { visitOrder: 'asc' },
@@ -167,13 +240,19 @@ const createSchedule = async ({ supervisorId, year, month, publish, scheduledVis
   });
 
   logger.info(
-    { scheduleId: schedule.id, supervisorId, year, month, branches: scheduledVisits.length },
+    {
+      scheduleId: schedule.id,
+      supervisorId,
+      year,
+      month,
+      branches: scheduledVisits.length,
+    },
     'Monthly schedule created',
   );
   return serializeSchedule(schedule);
 };
 
-const listSchedules = async ({ page, limit, supervisorId, year, month, published, sort }) => {
+const listSchedules = async ({ page, limit, supervisorId, year, month, sort }) => {
   const skip = (page - 1) * limit;
 
   const where = {
@@ -181,8 +260,6 @@ const listSchedules = async ({ page, limit, supervisorId, year, month, published
     ...(supervisorId && { supervisorId }),
     ...(year !== undefined && { year }),
     ...(month !== undefined && { month }),
-    ...(published === true && { publishedAt: { not: null } }),
-    ...(published === false && { publishedAt: null }),
   };
 
   const orderBy = sort === 'oldest' ? { createdAt: 'asc' } : { createdAt: 'desc' };
@@ -198,7 +275,7 @@ const listSchedules = async ({ page, limit, supervisorId, year, month, published
         scheduledVisits: {
           where: { deletedAt: null },
           include: {
-            branch: true,
+            regionScheduling: true,
             visitInstances: {
               where: { deletedAt: null },
               orderBy: { visitOrder: 'asc' },
@@ -229,7 +306,7 @@ const getSchedule = async (id) => {
       scheduledVisits: {
         where: { deletedAt: null },
         include: {
-          branch: true,
+          regionScheduling: true,
           visitInstances: {
             where: { deletedAt: null },
             orderBy: { visitOrder: 'asc' },
@@ -243,30 +320,6 @@ const getSchedule = async (id) => {
     throw ApiError.notFound('Monthly schedule not found');
   }
   return serializeSchedule(schedule);
-};
-
-const updateSchedule = async (id, { publish }) => {
-  const existing = await prisma.monthlySchedule.findFirst({
-    where: { id, deletedAt: null },
-  });
-  if (!existing) {
-    throw ApiError.notFound('Monthly schedule not found');
-  }
-
-  const data = {};
-  if (publish === true && !existing.publishedAt) {
-    data.publishedAt = new Date();
-  } else if (publish === false && existing.publishedAt) {
-    data.publishedAt = null;
-  }
-
-  if (Object.keys(data).length === 0) {
-    return getSchedule(id);
-  }
-
-  await prisma.monthlySchedule.update({ where: { id }, data });
-  logger.info({ scheduleId: id, publish }, 'Monthly schedule updated');
-  return getSchedule(id);
 };
 
 /**
@@ -309,6 +362,5 @@ module.exports = {
   createSchedule,
   listSchedules,
   getSchedule,
-  updateSchedule,
   deleteSchedule,
 };

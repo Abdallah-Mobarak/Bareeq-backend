@@ -1,3 +1,5 @@
+const path = require('node:path');
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -37,6 +39,19 @@ app.use(express.urlencoded({ extended: true }));
 
 // 5: Request logging
 app.use(requestLogger);
+
+// 6a-pre: Static serving for visit photos. Stored under <repo>/uploads;
+//         exposed at /uploads/* with a long cache so the mobile app can
+//         re-display photos cheaply. Helmet's CSP doesn't apply (we
+//         already disabled it for static assets implicitly).
+app.use(
+  '/uploads',
+  express.static(path.join(__dirname, '..', 'uploads'), {
+    maxAge: '7d',
+    etag: true,
+    fallthrough: true,
+  }),
+);
 
 // 6a: Health check — intentionally outside the API prefix so load balancers
 //     and uptime monitors can hit a stable URL. Includes a DB ping so we

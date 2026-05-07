@@ -1,0 +1,869 @@
+{
+  "info": {
+    "name": "Bareeq API — Sprint 1 Additions",
+    "description": "Permissions, Region Scheduling, Accountant Managers, Assign Company, Admins, Manager Tasks. Import this alongside the main Bareeq API collection. Run requests top-to-bottom; each one stashes the ids the next ones need into environment vars.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "00 — Login (run first)",
+      "item": [
+        {
+          "name": "POST /auth/login (admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success) {",
+                  "  pm.environment.set('accessToken', j.data.accessToken);",
+                  "  pm.environment.set('refreshToken', j.data.refreshToken);",
+                  "  pm.environment.set('adminId', j.data.user.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "06 — Permissions Catalog",
+      "item": [
+        {
+          "name": "GET /permissions (grouped by module)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/permissions",
+              "host": ["{{baseUrl}}"],
+              "path": ["permissions"]
+            }
+          }
+        },
+        {
+          "name": "GET /permissions?grouped=false (flat)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/permissions?grouped=false",
+              "host": ["{{baseUrl}}"],
+              "path": ["permissions"],
+              "query": [{ "key": "grouped", "value": "false" }]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "07 — Permission Roles (CRUD)",
+      "item": [
+        {
+          "name": "POST /permission-roles (create role)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success) pm.environment.set('permissionRoleId', j.data.role.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/permission-roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["permission-roles"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Reports Manager\",\n  \"permissionKeys\": [\n    \"VIEW_TEAMS\",\n    \"EXPORT_TEAMS\",\n    \"VIEW_MONTHLY_REPORTS\",\n    \"EXPORT_MONTHLY_REPORTS\",\n    \"VIEW_SALES\",\n    \"EXPORT_SALES\"\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /permission-roles",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/permission-roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["permission-roles"]
+            }
+          }
+        },
+        {
+          "name": "GET /permission-roles/:id",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/permission-roles/{{permissionRoleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["permission-roles", "{{permissionRoleId}}"]
+            }
+          }
+        },
+        {
+          "name": "PATCH /permission-roles/:id (replace permissions)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/permission-roles/{{permissionRoleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["permission-roles", "{{permissionRoleId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Reports Manager (renamed)\",\n  \"permissionKeys\": [\"VIEW_TEAMS\", \"EXPORT_TEAMS\", \"VIEW_MONTHLY_REPORTS\"]\n}"
+            }
+          }
+        },
+        {
+          "name": "DELETE /permission-roles/:id",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/permission-roles/{{permissionRoleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["permission-roles", "{{permissionRoleId}}"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "08 — Region Schedulings (CRUD + Excel)",
+      "item": [
+        {
+          "name": "POST /region-schedulings (create)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success) pm.environment.set('regionSchedulingId', j.data.regionScheduling.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/region-schedulings",
+              "host": ["{{baseUrl}}"],
+              "path": ["region-schedulings"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"regionTitle\": \"Riyadh North\",\n  \"companyName\": \"Carrefour\",\n  \"branchName\": \"Granada Mall\",\n  \"categoryName\": \"Hypermarket\",\n  \"branchNumber\": \"BR-001\",\n  \"city\": \"Riyadh\",\n  \"region\": \"Central\",\n  \"address\": \"Eastern Ring Rd\",\n  \"latitude\": 24.7,\n  \"longitude\": 46.7,\n  \"numberOfVisits\": 2,\n  \"code\": \"CRF-001\",\n  \"requiredTasks\": [\n    { \"visitType\": 1, \"titleAr\": \"فحص الواجهة\", \"titleEn\": \"Inspect storefront\" },\n    { \"visitType\": 2, \"titleAr\": \"تدقيق المخزون\", \"titleEn\": \"Audit inventory\" }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "POST /region-schedulings (create #2 — for Lulu)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success) pm.environment.set('regionSchedulingId2', j.data.regionScheduling.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/region-schedulings",
+              "host": ["{{baseUrl}}"],
+              "path": ["region-schedulings"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"regionTitle\": \"East\",\n  \"companyName\": \"Lulu\",\n  \"branchName\": \"Branch A\",\n  \"city\": \"Dammam\",\n  \"region\": \"East\",\n  \"numberOfVisits\": 2\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /region-schedulings (list, filterable)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/region-schedulings?page=1&limit=20&companyName=Carrefour",
+              "host": ["{{baseUrl}}"],
+              "path": ["region-schedulings"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "companyName", "value": "Carrefour" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /region-schedulings/:id",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/region-schedulings/{{regionSchedulingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["region-schedulings", "{{regionSchedulingId}}"]
+            }
+          }
+        },
+        {
+          "name": "PATCH /region-schedulings/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/region-schedulings/{{regionSchedulingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["region-schedulings", "{{regionSchedulingId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchNumber\": \"BR-001-UPDATED\",\n  \"address\": \"New address\"\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /region-schedulings/export.xlsx",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/region-schedulings/export.xlsx",
+              "host": ["{{baseUrl}}"],
+              "path": ["region-schedulings", "export.xlsx"]
+            },
+            "description": "Returns the Excel file. In Apidog: click 'Save Response' to download."
+          }
+        },
+        {
+          "name": "GET /region-schedulings/export.pdf",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/region-schedulings/export.pdf",
+              "host": ["{{baseUrl}}"],
+              "path": ["region-schedulings", "export.pdf"]
+            }
+          }
+        },
+        {
+          "name": "POST /region-schedulings/import (multipart)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/region-schedulings/import",
+              "host": ["{{baseUrl}}"],
+              "path": ["region-schedulings", "import"]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": "" }
+              ]
+            },
+            "description": "In Apidog body → form-data → field 'file' → choose your .xlsx file. Round-trip an export download to test quickly."
+          }
+        },
+        {
+          "name": "DELETE /region-schedulings/:id",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/region-schedulings/{{regionSchedulingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["region-schedulings", "{{regionSchedulingId}}"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "09 — Companies (prep for AM)",
+      "item": [
+        {
+          "name": "POST /companies (create Lulu)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success) pm.environment.set('companyId', j.data.company.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/companies", "host": ["{{baseUrl}}"], "path": ["companies"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nameAr\": \"Lulu\",\n  \"nameEn\": \"Lulu Hypermarket\",\n  \"loginEmail\": \"lulu@test.com\",\n  \"loginPhone\": \"+966500000400\",\n  \"loginPassword\": \"Test@12345\"\n}"
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "10 — Accountant Managers",
+      "item": [
+        {
+          "name": "POST /accountant-managers (specific branches)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success) pm.environment.set('accountantManagerId', j.data.accountantManager.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/accountant-managers",
+              "host": ["{{baseUrl}}"],
+              "path": ["accountant-managers"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"am1@lulu.com\",\n  \"phone\": \"+966500000500\",\n  \"password\": \"Am@12345\",\n  \"nameAr\": \"AM Lulu 1\",\n  \"nameEn\": \"AM Lulu 1\",\n  \"companyId\": \"{{companyId}}\",\n  \"assignedToAllBranches\": false,\n  \"regionSchedulingIds\": [\"{{regionSchedulingId2}}\"]\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /accountant-managers?companyId=...",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/accountant-managers?companyId={{companyId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["accountant-managers"],
+              "query": [{ "key": "companyId", "value": "{{companyId}}" }]
+            }
+          }
+        },
+        {
+          "name": "GET /accountant-managers/:id (with effective branches)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/accountant-managers/{{accountantManagerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["accountant-managers", "{{accountantManagerId}}"]
+            }
+          }
+        },
+        {
+          "name": "PATCH /accountant-managers/:id (replace branches)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/accountant-managers/{{accountantManagerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["accountant-managers", "{{accountantManagerId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nameEn\": \"AM Lulu Senior\",\n  \"regionSchedulingIds\": [\"{{regionSchedulingId2}}\"]\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH /accountant-managers/:id/password",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/accountant-managers/{{accountantManagerId}}/password",
+              "host": ["{{baseUrl}}"],
+              "path": ["accountant-managers", "{{accountantManagerId}}", "password"]
+            },
+            "body": { "mode": "raw", "raw": "{\n  \"newPassword\": \"NewAm@12345\"\n}" }
+          }
+        },
+        {
+          "name": "PATCH /accountant-managers/:id/status",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/accountant-managers/{{accountantManagerId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["accountant-managers", "{{accountantManagerId}}", "status"]
+            },
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"BLOCKED\"\n}" }
+          }
+        },
+        {
+          "name": "POST /auth/login (as AM — should succeed)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"am1@lulu.com\",\n  \"password\": \"Am@12345\"\n}"
+            },
+            "description": "Use this AFTER unblocking the AM (set status back to ENABLED). Tests FRD §2 FR-3."
+          }
+        },
+        {
+          "name": "DELETE /accountant-managers/:id",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/accountant-managers/{{accountantManagerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["accountant-managers", "{{accountantManagerId}}"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "11 — Assign Company (composite atomic)",
+      "item": [
+        {
+          "name": "POST /assign-company (login update + multi-AM)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/assign-company", "host": ["{{baseUrl}}"], "path": ["assign-company"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyId\": \"{{companyId}}\",\n  \"updateLogin\": {\n    \"phone\": \"+966500000401\"\n  },\n  \"accountantManagers\": [\n    {\n      \"email\": \"am.bulk1@lulu.com\",\n      \"phone\": \"+966500000550\",\n      \"password\": \"Bulk@12345\",\n      \"nameAr\": \"AM Bulk 1\",\n      \"assignedToAllBranches\": false,\n      \"regionSchedulingIds\": [\"{{regionSchedulingId2}}\"]\n    }\n  ]\n}"
+            },
+            "description": "Either everything saves or nothing does. Try with a duplicate email or already-claimed branch to see rollback."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "12 — Assign Supervisor (Monthly Schedule create)",
+      "item": [
+        {
+          "name": "POST /supervisors (create)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success) pm.environment.set('supervisorId', j.data.supervisor.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/supervisors", "host": ["{{baseUrl}}"], "path": ["supervisors"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"sup1@test.com\",\n  \"phone\": \"+966500000900\",\n  \"password\": \"Sup@12345\",\n  \"nameAr\": \"Supervisor One\",\n  \"nameEn\": \"Supervisor One\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST /monthly-schedules (Assign Supervisor flow)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success) pm.environment.set('monthlyScheduleId', j.data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/monthly-schedules", "host": ["{{baseUrl}}"], "path": ["monthly-schedules"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supervisorId\": \"{{supervisorId}}\",\n  \"year\": 2026,\n  \"month\": 8,\n  \"publish\": true,\n  \"scheduledVisits\": [\n    {\n      \"regionSchedulingId\": \"{{regionSchedulingId2}}\",\n      \"numberOfVisits\": 2,\n      \"firstVisitDate\": \"2026-08-02\"\n    }\n  ]\n}"
+            },
+            "description": "System auto-distributes V1 / V2 dates 15 days apart per FRD §1.2.3.1."
+          }
+        },
+        {
+          "name": "GET /monthly-schedules?supervisorId=...",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/monthly-schedules?supervisorId={{supervisorId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["monthly-schedules"],
+              "query": [{ "key": "supervisorId", "value": "{{supervisorId}}" }]
+            }
+          }
+        },
+        {
+          "name": "GET /monthly-schedules/:id",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/monthly-schedules/{{monthlyScheduleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["monthly-schedules", "{{monthlyScheduleId}}"]
+            }
+          }
+        },
+        {
+          "name": "PATCH /monthly-schedules/:id (toggle publish)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/monthly-schedules/{{monthlyScheduleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["monthly-schedules", "{{monthlyScheduleId}}"]
+            },
+            "body": { "mode": "raw", "raw": "{\n  \"publish\": false\n}" }
+          }
+        },
+        {
+          "name": "DELETE /monthly-schedules/:id",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/monthly-schedules/{{monthlyScheduleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["monthly-schedules", "{{monthlyScheduleId}}"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "13 — Admins (CRUD + /me)",
+      "item": [
+        {
+          "name": "GET /admins/me",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/admins/me", "host": ["{{baseUrl}}"], "path": ["admins", "me"] }
+          }
+        },
+        {
+          "name": "PATCH /admins/me (update profile)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/admins/me", "host": ["{{baseUrl}}"], "path": ["admins", "me"] },
+            "body": { "mode": "raw", "raw": "{\n  \"nameEn\": \"Root Admin Updated\"\n}" }
+          }
+        },
+        {
+          "name": "PATCH /admins/me/password (change own)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/admins/me/password",
+              "host": ["{{baseUrl}}"],
+              "path": ["admins", "me", "password"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"Admin@12345\",\n  \"newPassword\": \"NewPass@12345\"\n}"
+            },
+            "description": "Revokes all sessions. Re-login afterwards."
+          }
+        },
+        {
+          "name": "POST /admins (create another admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success) pm.environment.set('adminId', j.data.admin.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/admins", "host": ["{{baseUrl}}"], "path": ["admins"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin2@test.com\",\n  \"password\": \"Admin@12345\",\n  \"nameAr\": \"Admin Two\",\n  \"nameEn\": \"Admin Two\"\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /admins (list)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/admins", "host": ["{{baseUrl}}"], "path": ["admins"] }
+          }
+        },
+        {
+          "name": "GET /admins/:id",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admins/{{adminId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admins", "{{adminId}}"]
+            }
+          }
+        },
+        {
+          "name": "PATCH /admins/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/admins/{{adminId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admins", "{{adminId}}"]
+            },
+            "body": { "mode": "raw", "raw": "{\n  \"nameEn\": \"Admin Two Updated\"\n}" }
+          }
+        },
+        {
+          "name": "PATCH /admins/:id/password",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/admins/{{adminId}}/password",
+              "host": ["{{baseUrl}}"],
+              "path": ["admins", "{{adminId}}", "password"]
+            },
+            "body": { "mode": "raw", "raw": "{\n  \"newPassword\": \"Reset@12345\"\n}" }
+          }
+        },
+        {
+          "name": "PATCH /admins/:id/status",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/admins/{{adminId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["admins", "{{adminId}}", "status"]
+            },
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"BLOCKED\"\n}" }
+          }
+        },
+        {
+          "name": "DELETE /admins/:id",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/admins/{{adminId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admins", "{{adminId}}"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "14 — Manager Tasks (admin + manager)",
+      "item": [
+        {
+          "name": "POST /managers (create manager)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success) pm.environment.set('managerId', j.data.manager.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/managers", "host": ["{{baseUrl}}"], "path": ["managers"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"mgr.tasks@test.com\",\n  \"phone\": \"+966500001000\",\n  \"password\": \"Mgr@12345\",\n  \"nameAr\": \"Manager Tasks\",\n  \"nameEn\": \"Manager Tasks\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST /manager-tasks (admin creates task)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success) pm.environment.set('managerTaskId', j.data.task.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/manager-tasks", "host": ["{{baseUrl}}"], "path": ["manager-tasks"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"managerId\": \"{{managerId}}\",\n  \"title\": \"Review monthly reports\",\n  \"description\": \"Check Q3 numbers\"\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /manager-tasks?managerId=&done=",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager-tasks?managerId={{managerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager-tasks"],
+              "query": [{ "key": "managerId", "value": "{{managerId}}" }]
+            }
+          }
+        },
+        {
+          "name": "PATCH /manager-tasks/:id (admin edits)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/manager-tasks/{{managerTaskId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager-tasks", "{{managerTaskId}}"]
+            },
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Review monthly reports (updated)\"\n}" }
+          }
+        },
+        {
+          "name": "POST /auth/login (as MANAGER — saves managerToken)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success) pm.environment.set('managerToken', j.data.accessToken);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"mgr.tasks@test.com\",\n  \"password\": \"Mgr@12345\"\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /manager-tasks/my (as MANAGER)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{managerToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager-tasks/my",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager-tasks", "my"]
+            }
+          }
+        },
+        {
+          "name": "PATCH /manager-tasks/my/:id/status (manager toggles done)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{managerToken}}", "type": "string" }]
+            },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/manager-tasks/my/{{managerTaskId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager-tasks", "my", "{{managerTaskId}}", "status"]
+            },
+            "body": { "mode": "raw", "raw": "{\n  \"done\": true\n}" }
+          }
+        },
+        {
+          "name": "DELETE /manager-tasks/:id (admin)",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/manager-tasks/{{managerTaskId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager-tasks", "{{managerTaskId}}"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -25,6 +25,7 @@ enum SystemRole {
   MANAGER
   SUPERVISOR
   COMPANY_USER
+  ACCOUNTANT_MANAGER
 }
 
 /// Whether the account can log in. Admin-controlled.
@@ -85,15 +86,25 @@ model User {
   permissionRoleId String?         @map("permission_role_id")
   permissionRole   PermissionRole? @relation(fields: [permissionRoleId], references: [id])
 
-  // Set only when role = COMPANY_USER. Links the login account to the
-  // company entity it represents.
+  // Set when role = COMPANY_USER (the company login account itself) OR
+  // role = ACCOUNTANT_MANAGER (the AM's parent company).
   companyId String?  @map("company_id")
   company   Company? @relation(fields: [companyId], references: [id])
+
+  /// ACCOUNTANT_MANAGER only.
+  /// true  → AM has access to ALL region schedulings whose companyName
+  ///         matches their parent company's nameAr.
+  /// false → AM is limited to the explicit rows in
+  ///         accountant_manager_region_schedulings.
+  /// Ignored for any other role.
+  assignedToAllBranches Boolean @default(false) @map("assigned_to_all_branches")
 
   refreshTokens     RefreshToken[]
   monthlySchedules  MonthlySchedule[]
   assignedTasks     ScheduledVisit[]  @relation("AssignedByManager")
   receivedTasks     ScheduledVisit[]  @relation("AssignedToSupervisor")
+  accountantBranchAssignments AccountantManagerRegionScheduling[]
+  managerTasks      ManagerTask[]    @relation("AssignedToManager")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -106,13 +117,13 @@ model User {
 }
 
 /// A named bundle of permissions. Created and managed by admins.
-/// Examples: "Reports Admin", "Sales Manager", "Full Admin".
+/// FRD §4.2.1.2 / §4.2.3.2: only `name` + selected permissions are
+/// captured. The role is not pre-bound to a user type — when the admin
+/// creates a manager or admin (FRD §4.2.1.1.2 / §4.2.3.1.2), they pick
+/// any role from a single unified list.
 model PermissionRole {
   id          String     @id @default(cuid())
-  name        String
-  description String?
-  /// Which kind of user this role can be assigned to (ADMIN or MANAGER).
-  appliesTo   SystemRole @map("applies_to")
+  name        String     @unique
 
   users       User[]
   permissions PermissionRolePermission[]
@@ -235,6 +246,115 @@ model NotImplementedReason {
 }
 
 // ============================================
+// REGION SCHEDULING — FRD §4.2.2.2.1
+// ============================================
+// RegionScheduling is a STANDALONE entity. Its company/city/region/
+// category fields are denormalised STRINGS — they do NOT FK into the
+// Companies/Cities/Regions/Categories catalog tables. The admin enters
+// them directly (typically via Excel import). This is intentional per
+// FRD §4.2.2.2.1; do not "improve" by switching to FKs.
+// ============================================
+
+/// One row per (branch + visit blueprint) the admin wants supervisors
+/// to visit. The actual visit instances (V1..V4) are generated later
+/// when an admin assigns a supervisor and a start date.
+model RegionScheduling {
+  id           String  @id @default(cuid())
+  regionTitle  String  @map("region_title")
+  companyName  String  @map("company_name")
+  branchName   String  @map("branch_name")
+  categoryName String? @map("category_name")
+  branchNumber String? @map("branch_number")
+  city         String
+  region       String
+  address      String?
+  latitude     Decimal?
+  longitude    Decimal?
+  /// 1..4 — drives how many V's are generated and the visit-type list.
+  numberOfVisits Int    @default(1) @map("number_of_visits")
+  code           String?
+
+  requiredTasks         RegionSchedulingTask[]
+  scheduledVisits       ScheduledVisit[]
+  accountantAssignments AccountantManagerRegionScheduling[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([companyName])
+  @@index([city])
+  @@index([region])
+  @@index([code])
+  @@index([deletedAt])
+  @@map("region_schedulings")
+}
+
+/// Tasks the supervisor must complete during a specific visit type
+/// (V1/V2/V3/V4) of a region scheduling record. Bilingual.
+model RegionSchedulingTask {
+  id                 String           @id @default(cuid())
+  regionSchedulingId String           @map("region_scheduling_id")
+  regionScheduling   RegionScheduling @relation(fields: [regionSchedulingId], references: [id], onDelete: Cascade)
+  /// 1=V1, 2=V2, 3=V3, 4=V4
+  visitType Int    @map("visit_type")
+  titleAr   String @map("title_ar")
+  titleEn   String? @map("title_en")
+  sortOrder Int    @default(0) @map("sort_order")
+
+  /// Per-visit instances of this task that the supervisor checks off.
+  visitChecks VisitInstanceTaskCheck[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([regionSchedulingId, visitType])
+  @@map("region_scheduling_tasks")
+}
+
+/// M:N between an Accountant Manager (User with role=ACCOUNTANT_MANAGER)
+/// and the region schedulings they're explicitly granted access to.
+/// Only consulted when the user's `assignedToAllBranches` is false.
+model AccountantManagerRegionScheduling {
+  userId             String @map("user_id")
+  regionSchedulingId String @map("region_scheduling_id")
+
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  regionScheduling RegionScheduling @relation(fields: [regionSchedulingId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([userId, regionSchedulingId])
+  @@index([regionSchedulingId])
+  @@map("accountant_manager_region_schedulings")
+}
+
+// ============================================
+// MANAGER TASKS — FRD §4.2.1.3
+// ============================================
+
+/// Admin-assigned to-dos for a specific manager. The manager toggles
+/// `done` to indicate completion. Pure todo list — no scheduling.
+model ManagerTask {
+  id          String  @id @default(cuid())
+  managerId   String  @map("manager_id")
+  manager     User    @relation("AssignedToManager", fields: [managerId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  done        Boolean @default(false)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([managerId])
+  @@index([done])
+  @@index([deletedAt])
+  @@map("manager_tasks")
+}
+
+// ============================================
 // COMPANIES & BRANCHES — Phase 3
 // ============================================
 
@@ -304,8 +424,10 @@ model Branch {
   /// 1..4 — drives schedule generation in Phase 4.
   visitsPerMonth Int @default(1) @map("visits_per_month")
 
-  requiredTasks   BranchRequiredTask[]
-  scheduledVisits ScheduledVisit[]
+  requiredTasks BranchRequiredTask[]
+  // Note: ScheduledVisit no longer links to Branch — see RegionScheduling
+  // (FRD §4.2.2.2.1). Branch is kept as a catalog record for reference
+  // and may be removed later if it stays unused.
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -384,10 +506,13 @@ model ScheduledVisit {
   assignedToSupervisorId String? @map("assigned_to_supervisor_id")
   assignedToSupervisor   User?   @relation("AssignedToSupervisor", fields: [assignedToSupervisorId], references: [id])
 
-  branchId       String   @map("branch_id")
-  branch         Branch   @relation(fields: [branchId], references: [id])
-  numberOfVisits Int      @default(1) @map("number_of_visits")
-  firstVisitDate DateTime @map("first_visit_date") @db.Date
+  /// FRD §4.2.2.2.1 §3 "Assign Supervisors": admin assigns a supervisor
+  /// to one or more region scheduling records. ScheduledVisit links to
+  /// the region scheduling, NOT the legacy Branches table.
+  regionSchedulingId String           @map("region_scheduling_id")
+  regionScheduling   RegionScheduling @relation(fields: [regionSchedulingId], references: [id])
+  numberOfVisits     Int              @default(1) @map("number_of_visits")
+  firstVisitDate     DateTime         @map("first_visit_date") @db.Date
 
   /// ADDITIONAL only: extra metadata.
   price Decimal?
@@ -400,7 +525,7 @@ model ScheduledVisit {
   deletedAt DateTime? @map("deleted_at")
 
   @@index([monthlyScheduleId])
-  @@index([branchId])
+  @@index([regionSchedulingId])
   @@index([type])
   @@index([assignedToSupervisorId])
   @@index([deletedAt])
@@ -435,6 +560,22 @@ model VisitInstance {
   /// For OTP-based documentation flow.
   branchManagerPhone String? @map("branch_manager_phone")
 
+  /// OTP sent to the branch manager so they can document the visit
+  /// via a public link (FRD §1.2.3.1 §2.5). Stored as a hash, not
+  /// plaintext.
+  documentationOtpHash String?   @map("documentation_otp_hash")
+  otpExpiresAt         DateTime? @map("otp_expires_at")
+
+  /// Public token used in the URL we send to the branch manager. Long,
+  /// random, single-use. Cleared once submission lands.
+  documentationToken String? @unique @map("documentation_token")
+
+  /// Branch-manager-provided documentation fields.
+  jobNumber    String?   @map("job_number")
+  rating       Int?      // 1..5, validated at service layer
+  comments     String?
+  documentedAt DateTime? @map("documented_at")
+
   /// Set when status reaches a terminal state. The service layer
   /// refuses any update if locked_at IS NOT NULL.
   lockedAt DateTime? @map("locked_at")
@@ -444,6 +585,9 @@ model VisitInstance {
   cascadedFromVisitInstanceId String?         @map("cascaded_from_visit_instance_id")
   cascadedFromVisitInstance   VisitInstance?  @relation("VisitCascade", fields: [cascadedFromVisitInstanceId], references: [id])
   cascadedTo                  VisitInstance[] @relation("VisitCascade")
+
+  photos     VisitInstancePhoto[]
+  taskChecks VisitInstanceTaskCheck[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -455,6 +599,46 @@ model VisitInstance {
   @@index([lockedAt])
   @@index([deletedAt])
   @@map("visit_instances")
+}
+
+/// Photos uploaded during a visit (FRD §1.2.3.1 §2.3).
+/// Optional 3–4 per visit; service layer enforces the cap.
+model VisitInstancePhoto {
+  id              String        @id @default(cuid())
+  visitInstanceId String        @map("visit_instance_id")
+  visitInstance   VisitInstance @relation(fields: [visitInstanceId], references: [id], onDelete: Cascade)
+  url             String
+  sizeBytes       Int?          @map("size_bytes")
+  mimeType        String?       @map("mime_type")
+  uploadedAt      DateTime      @default(now()) @map("uploaded_at")
+  deletedAt       DateTime?     @map("deleted_at")
+
+  @@index([visitInstanceId])
+  @@map("visit_instance_photos")
+}
+
+/// Per-visit checklist of the required tasks. We snapshot the task
+/// titles (titleAr/titleEn) at creation time so renames on
+/// RegionSchedulingTask don't rewrite history.
+model VisitInstanceTaskCheck {
+  id              String        @id @default(cuid())
+  visitInstanceId String        @map("visit_instance_id")
+  visitInstance   VisitInstance @relation(fields: [visitInstanceId], references: [id], onDelete: Cascade)
+
+  /// Source task (kept for traceability; nullable so deleting a task
+  /// definition doesn't orphan past records).
+  regionSchedulingTaskId String?               @map("region_scheduling_task_id")
+  regionSchedulingTask   RegionSchedulingTask? @relation(fields: [regionSchedulingTaskId], references: [id])
+
+  titleAr String  @map("title_ar")
+  titleEn String? @map("title_en")
+  done    Boolean @default(false)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([visitInstanceId])
+  @@map("visit_instance_task_checks")
 }
 
 // ============================================
