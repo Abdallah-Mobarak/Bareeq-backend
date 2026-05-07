@@ -123,6 +123,30 @@ const listAdmins = async ({ page, limit, q, status, permissionRoleId, sort }) =>
   };
 };
 
+const listAllAdminsForExport = async ({ q, status, permissionRoleId, sort } = {}) => {
+  const where = {
+    role: 'ADMIN',
+    deletedAt: null,
+    ...(q && {
+      OR: [
+        { nameAr: { contains: q, mode: 'insensitive' } },
+        { nameEn: { contains: q, mode: 'insensitive' } },
+        { email: { contains: q, mode: 'insensitive' } },
+      ],
+    }),
+    ...(status && { status }),
+    ...(permissionRoleId && { permissionRoleId }),
+  };
+  const orderBy = sort === 'oldest' ? { createdAt: 'asc' } : { createdAt: 'desc' };
+  const items = await prisma.user.findMany({
+    where,
+    orderBy,
+    take: 5000,
+    include: { permissionRole: true },
+  });
+  return items.map(serializeAdmin);
+};
+
 const getAdmin = async (id) => {
   const user = await prisma.user.findFirst({
     where: { id, role: 'ADMIN', deletedAt: null },
@@ -370,6 +394,7 @@ const changeOwnPassword = async (userId, { currentPassword, newPassword }) => {
 module.exports = {
   createAdmin,
   listAdmins,
+  listAllAdminsForExport,
   getAdmin,
   updateAdmin,
   deleteAdmin,

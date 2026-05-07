@@ -1,4 +1,5 @@
 const { asyncHandler } = require('../../utils/asyncHandler');
+const { buildExcel, xlsxResponse, todayStamp } = require('../../utils/excelExport');
 const service = require('./accountant-managers.service');
 
 const create = asyncHandler(async (req, res) => {
@@ -39,4 +40,34 @@ const updateStatus = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { accountantManager } });
 });
 
-module.exports = { create, list, getOne, update, remove, changePassword, updateStatus };
+const exportXlsx = asyncHandler(async (req, res) => {
+  const rows = await service.listAllAccountantManagersForExport(req.validatedQuery || {});
+  const buffer = await buildExcel({
+    sheetName: 'Accountant Managers',
+    columns: [
+      { header: 'Name (AR)', key: 'nameAr', width: 28 },
+      { header: 'Name (EN)', key: 'nameEn', width: 28 },
+      { header: 'Email', key: 'email', width: 28 },
+      { header: 'Phone', key: 'phone', width: 18 },
+      { header: 'Status', key: 'status', width: 12 },
+      { header: 'Company', key: (r) => r.company?.nameAr, width: 28 },
+      {
+        header: 'Scope',
+        key: (r) =>
+          r.assignedToAllBranches
+            ? 'All branches'
+            : `Specific (${(r.assignedBranches || []).length})`,
+        width: 18,
+      },
+      {
+        header: 'Created At',
+        key: (r) => (r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 10) : null),
+        width: 14,
+      },
+    ],
+    rows,
+  });
+  xlsxResponse(res, buffer, `accountant-managers-${todayStamp()}.xlsx`);
+});
+
+module.exports = { create, list, getOne, update, remove, changePassword, updateStatus, exportXlsx };

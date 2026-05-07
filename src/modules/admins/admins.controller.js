@@ -1,4 +1,5 @@
 const { asyncHandler } = require('../../utils/asyncHandler');
+const { buildExcel, xlsxResponse, todayStamp } = require('../../utils/excelExport');
 const service = require('./admins.service');
 
 const create = asyncHandler(async (req, res) => {
@@ -51,6 +52,28 @@ const changeMyPassword = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { message: 'Password changed. Please log in again.' } });
 });
 
+const exportXlsx = asyncHandler(async (req, res) => {
+  const rows = await service.listAllAdminsForExport(req.validatedQuery || {});
+  const buffer = await buildExcel({
+    sheetName: 'Admins',
+    columns: [
+      { header: 'Name (AR)', key: 'nameAr', width: 28 },
+      { header: 'Name (EN)', key: 'nameEn', width: 28 },
+      { header: 'Email', key: 'email', width: 28 },
+      { header: 'Phone', key: 'phone', width: 18 },
+      { header: 'Status', key: 'status', width: 12 },
+      { header: 'Permission Role', key: (r) => r.permissionRole?.name, width: 22 },
+      {
+        header: 'Created At',
+        key: (r) => (r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 10) : null),
+        width: 14,
+      },
+    ],
+    rows,
+  });
+  xlsxResponse(res, buffer, `admins-${todayStamp()}.xlsx`);
+});
+
 module.exports = {
   create,
   list,
@@ -62,4 +85,5 @@ module.exports = {
   me,
   updateMe,
   changeMyPassword,
+  exportXlsx,
 };

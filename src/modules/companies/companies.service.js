@@ -82,6 +82,45 @@ const listCompanies = async ({ page, limit, q, sort }) => {
   };
 };
 
+/**
+ * Same shape as listCompanies but no pagination — all matching rows.
+ * Used by the Excel export endpoint. We cap at 5000 to avoid blowing
+ * up the worker if `q` is empty on a huge tenant; if anyone hits it
+ * we'll switch to streaming.
+ */
+const listAllCompaniesForExport = async ({ q, sort } = {}) => {
+  const where = {
+    deletedAt: null,
+    ...(q && {
+      OR: [
+        { nameAr: { contains: q, mode: 'insensitive' } },
+        { nameEn: { contains: q, mode: 'insensitive' } },
+        { contactEmail: { contains: q, mode: 'insensitive' } },
+      ],
+    }),
+  };
+  const orderBy =
+    sort === 'oldest'
+      ? { createdAt: 'asc' }
+      : sort === 'name'
+        ? { nameAr: 'asc' }
+        : { createdAt: 'desc' };
+
+  const items = await prisma.company.findMany({
+    where,
+    orderBy,
+    take: 5000,
+    include: {
+      loginUsers: {
+        where: { deletedAt: null },
+        orderBy: { createdAt: 'asc' },
+        take: 1,
+      },
+    },
+  });
+  return items.map(serializeCompany);
+};
+
 const getCompany = async (id) => {
   const company = await prisma.company.findFirst({
     where: { id, deletedAt: null },
@@ -296,6 +335,7 @@ const updateCompanyStatus = async (id, status) => {
 
 module.exports = {
   listCompanies,
+  listAllCompaniesForExport,
   getCompany,
   updateCompany,
   deleteCompany,

@@ -75,6 +75,25 @@ const listSupervisors = async ({ page, limit, q, status, sort }) => {
   };
 };
 
+const listAllSupervisorsForExport = async ({ q, status, sort } = {}) => {
+  const where = {
+    role: 'SUPERVISOR',
+    deletedAt: null,
+    ...(q && {
+      OR: [
+        { nameAr: { contains: q, mode: 'insensitive' } },
+        { nameEn: { contains: q, mode: 'insensitive' } },
+        { email: { contains: q, mode: 'insensitive' } },
+        { phone: { contains: q } },
+      ],
+    }),
+    ...(status && { status }),
+  };
+  const orderBy = sort === 'oldest' ? { createdAt: 'asc' } : { createdAt: 'desc' };
+  const items = await prisma.user.findMany({ where, orderBy, take: 5000 });
+  return items.map(serializeSupervisor);
+};
+
 const getSupervisor = async (id) => {
   const user = await prisma.user.findFirst({
     where: { id, role: 'SUPERVISOR', deletedAt: null },
@@ -194,6 +213,7 @@ const updateSupervisorStatus = async (id, status) => {
 module.exports = {
   createSupervisor,
   listSupervisors,
+  listAllSupervisorsForExport,
   getSupervisor,
   updateSupervisor,
   deleteSupervisor,

@@ -280,6 +280,41 @@ const listAccountantManagers = async ({
   };
 };
 
+const listAllAccountantManagersForExport = async ({
+  q,
+  companyId,
+  status,
+  assignedToAllBranches,
+  sort,
+} = {}) => {
+  const where = {
+    role: 'ACCOUNTANT_MANAGER',
+    deletedAt: null,
+    ...(q && {
+      OR: [
+        { nameAr: { contains: q, mode: 'insensitive' } },
+        { nameEn: { contains: q, mode: 'insensitive' } },
+        { email: { contains: q, mode: 'insensitive' } },
+        { phone: { contains: q } },
+      ],
+    }),
+    ...(companyId && { companyId }),
+    ...(status && { status }),
+    ...(assignedToAllBranches !== undefined && { assignedToAllBranches }),
+  };
+  const orderBy = sort === 'oldest' ? { createdAt: 'asc' } : { createdAt: 'desc' };
+  const items = await prisma.user.findMany({
+    where,
+    orderBy,
+    take: 5000,
+    include: {
+      company: true,
+      accountantBranchAssignments: { include: { regionScheduling: true } },
+    },
+  });
+  return items.map(serializeAM);
+};
+
 /**
  * Detail view also returns the *effective* branch scope: the explicit
  * assignments for fixed-mode AMs, or the dynamically resolved set of
@@ -511,6 +546,7 @@ const updateAccountantManagerStatus = async (id, status) => {
 module.exports = {
   createAccountantManager,
   listAccountantManagers,
+  listAllAccountantManagersForExport,
   getAccountantManager,
   updateAccountantManager,
   deleteAccountantManager,

@@ -132,6 +132,31 @@ const listManagers = async ({ page, limit, q, status, permissionRoleId, sort }) 
   };
 };
 
+const listAllManagersForExport = async ({ q, status, permissionRoleId, sort } = {}) => {
+  const where = {
+    role: 'MANAGER',
+    deletedAt: null,
+    ...(q && {
+      OR: [
+        { nameAr: { contains: q, mode: 'insensitive' } },
+        { nameEn: { contains: q, mode: 'insensitive' } },
+        { email: { contains: q, mode: 'insensitive' } },
+        { phone: { contains: q } },
+      ],
+    }),
+    ...(status && { status }),
+    ...(permissionRoleId && { permissionRoleId }),
+  };
+  const orderBy = sort === 'oldest' ? { createdAt: 'asc' } : { createdAt: 'desc' };
+  const items = await prisma.user.findMany({
+    where,
+    orderBy,
+    take: 5000,
+    include: { permissionRole: true },
+  });
+  return items.map(serializeManager);
+};
+
 const getManager = async (id) => {
   const user = await prisma.user.findFirst({
     where: { id, role: 'MANAGER', deletedAt: null },
@@ -294,6 +319,7 @@ const updateManagerStatus = async (id, status) => {
 module.exports = {
   createManager,
   listManagers,
+  listAllManagersForExport,
   getManager,
   updateManager,
   deleteManager,

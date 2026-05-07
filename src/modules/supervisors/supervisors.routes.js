@@ -18,6 +18,11 @@ const router = Router();
 router.use(requireAuth, requireRole('ADMIN'));
 
 router.get('/', validate(listSupervisorsQuerySchema, 'query'), controller.list);
+router.get(
+  '/export.xlsx',
+  validate(listSupervisorsQuerySchema, 'query'),
+  controller.exportXlsx,
+);
 router.post('/', validate(createSupervisorSchema), controller.create);
 router.get('/:id', validate(idParamSchema, 'params'), controller.getOne);
 router.patch(

@@ -27,6 +27,13 @@ router.use(requireAuth, requireRole('ADMIN'));
  * data — which is exactly what we don't want.
  */
 router.get('/', validate(listCompaniesQuerySchema, 'query'), controller.list);
+// Export must come BEFORE /:id otherwise Express matches "/export.xlsx"
+// as id="export.xlsx".
+router.get(
+  '/export.xlsx',
+  validate(listCompaniesQuerySchema, 'query'),
+  controller.exportXlsx,
+);
 router.get('/:id', validate(idParamSchema, 'params'), controller.getOne);
 router.patch(
   '/:id',
