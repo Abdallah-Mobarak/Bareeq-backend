@@ -1,0 +1,613 @@
+{
+  "info": {
+    "name": "Bareeq Company Portal — COMPANY_USER + Accountant Manager",
+    "description": "Read-only company-side endpoints (FRD §2 + §2 Accountant Manager).\n\nBoth roles share the same routes; the backend scopes data per role automatically.\n\nPrerequisites:\n• Run the admin assign-company flow in the Sprint 1 additions collection to create a Company + COMPANY_USER (and optionally an AM).\n• Set `companyEmail`/`companyPassword` (and optionally `amEmail`/`amPassword`) in the environment.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{companyToken}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "00 — Auth",
+      "item": [
+        {
+          "name": "POST /auth/web/login (COMPANY_USER → companyToken)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success) {",
+                  "  pm.environment.set('companyToken', j.data.accessToken);",
+                  "  pm.environment.set('companyUserId', j.data.user.id);",
+                  "  console.log('✅ COMPANY_USER logged in (web)');",
+                  "} else {",
+                  "  console.log('❌ login failed:', JSON.stringify(j));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/web/login", "host": ["{{baseUrl}}"], "path": ["auth", "web", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{companyEmail}}\",\n  \"password\": \"{{companyPassword}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST /auth/mobile/login (COMPANY_USER → companyToken)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success) {",
+                  "  pm.environment.set('companyToken', j.data.accessToken);",
+                  "  pm.environment.set('companyUserId', j.data.user.id);",
+                  "  console.log('✅ COMPANY_USER logged in (mobile)');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/mobile/login", "host": ["{{baseUrl}}"], "path": ["auth", "mobile", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{companyEmail}}\",\n  \"password\": \"{{companyPassword}}\"\n}"
+            },
+            "description": "FRD §2 — Companies are mobile+web. Same credentials, different surface."
+          }
+        },
+        {
+          "name": "POST /auth/web/login (ACCOUNTANT_MANAGER → amToken)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success) {",
+                  "  pm.environment.set('amToken', j.data.accessToken);",
+                  "  pm.environment.set('amUserId', j.data.user.id);",
+                  "  console.log('✅ AM logged in (web only — FRD-literal)');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/web/login", "host": ["{{baseUrl}}"], "path": ["auth", "web", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{amEmail}}\",\n  \"password\": \"{{amPassword}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST /auth/mobile/login (AM — MUST FAIL 403, web-only)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/mobile/login", "host": ["{{baseUrl}}"], "path": ["auth", "mobile", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{amEmail}}\",\n  \"password\": \"{{amPassword}}\"\n}"
+            },
+            "description": "FRD §2 AM section does not mention mobile, so AM is web-only. Mobile login must be rejected."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "01 — Profile (FRD §2.1 + FR-7)",
+      "item": [
+        {
+          "name": "GET /company/my-profile (as COMPANY_USER)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/my-profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "my-profile"]
+            },
+            "description": "Returns: id, role=COMPANY_USER, name, email, phone, company. No assignedBranches field."
+          }
+        },
+        {
+          "name": "GET /company/my-profile (as AM — switches token)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{amToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/my-profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "my-profile"]
+            },
+            "description": "Returns: same base shape PLUS `assignedBranches` (FR-7). mode='all' if assignedToAllBranches=true; otherwise mode='specific' with the explicit branch list."
+          }
+        },
+        {
+          "name": "GET /company/my-profile (as ADMIN — MUST FAIL 403)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/my-profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "my-profile"]
+            },
+            "description": "Admin doesn't have access to the company portal. Uses {{accessToken}} from the main collection. Must fail with 403 'Insufficient role for this resource'."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "02 — Branches Listing (FRD §2.2.1 / §2.2.2 / §2.2.3)",
+      "item": [
+        {
+          "name": "GET /company/branches (default — current month)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/branches",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "branches"]
+            },
+            "description": "Paginated list of branches the COMPANY_USER can see this month. Each row contains regionScheduling (brandName + city + region + location + ...) and instances (V1..V4 with status + documentationStatus)."
+          }
+        },
+        {
+          "name": "GET /company/branches (specific month — FRD §2.2.3)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/branches?year=2026&month=8",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "branches"],
+              "query": [
+                { "key": "year", "value": "2026" },
+                { "key": "month", "value": "8" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /company/branches (free-text search — FRD §2.2.2)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/branches?q=Riyadh",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "branches"],
+              "query": [{ "key": "q", "value": "Riyadh" }]
+            },
+            "description": "Free-text matches against branchName, categoryName, branchNumber, city, region, code."
+          }
+        },
+        {
+          "name": "GET /company/branches (filters — FRD §2.2.3)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/branches?city=Riyadh&visitType=2&dateFrom=2026-08-01&dateTo=2026-08-31",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "branches"],
+              "query": [
+                { "key": "city", "value": "Riyadh" },
+                { "key": "visitType", "value": "2" },
+                { "key": "dateFrom", "value": "2026-08-01" },
+                { "key": "dateTo", "value": "2026-08-31" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /company/branches (visitStatus filter — FRD §2.2.3)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/branches?visitStatus=IMPLEMENTED",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "branches"],
+              "query": [{ "key": "visitStatus", "value": "IMPLEMENTED" }]
+            },
+            "description": "Allowed: REMAINING | UNDERWAY | IMPLEMENTED | NOT_IMPLEMENTED | FINAL_CLOSED | NO_ACTION (the last is the FRD label — maps to REMAINING in our enum)."
+          }
+        },
+        {
+          "name": "GET /company/branches (as AM — scoped to assigned branches)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{amToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/branches",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "branches"]
+            },
+            "description": "FR-19, FR-23: AM sees only branches assigned to them (unless assignedToAllBranches=true). Defense-in-depth: even if an AM has an out-of-company assignment row in the DB, the companyName filter still excludes it."
+          }
+        },
+        {
+          "name": "GET /company/branches (auto-stash first id → companyBranchId)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success && j.data?.items?.[0]) {",
+                  "  pm.environment.set('companyBranchId', j.data.items[0].id);",
+                  "  console.log('✅ stashed companyBranchId:', j.data.items[0].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/branches?limit=1",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "branches"],
+              "query": [{ "key": "limit", "value": "1" }]
+            },
+            "description": "Helper: pulls the first ScheduledVisit id into the environment so the next folder's detail requests work without manual copy-paste."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "03 — Branch Detail (FRD §2.2.5 + FR-39 → FR-48)",
+      "item": [
+        {
+          "name": "GET /company/branches/:id (as COMPANY_USER)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/branches/{{companyBranchId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "branches", "{{companyBranchId}}"]
+            },
+            "description": "Full branch detail: regionScheduling (brandName, city, region, location, etc.) + requiredTasks blueprint per visit type + per-instance state (status, photos, taskChecks, documentation answers). Run '02 — auto-stash' first to populate {{companyBranchId}}."
+          }
+        },
+        {
+          "name": "GET /company/branches/:id (as AM)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{amToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/branches/{{companyBranchId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "branches", "{{companyBranchId}}"]
+            },
+            "description": "Same shape as COMPANY_USER. If the branch isn't in the AM's assigned list, returns 404 (NOT 403 — object-capability pattern)."
+          }
+        },
+        {
+          "name": "GET /company/branches/:bogus (MUST FAIL 404)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/branches/notarealid000000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "branches", "notarealid000000000000000"]
+            },
+            "description": "Out-of-scope or non-existent id → 404 'Branch not found'. We do NOT differentiate so attackers can't probe for valid ids belonging to other companies."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "04 — Monthly Report (FRD §2.3 + FR-49 → FR-55)",
+      "item": [
+        {
+          "name": "GET /company/monthly-report (default — current month)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/monthly-report",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "monthly-report"]
+            },
+            "description": "Per-branch breakdown + grand totals. Each branch row exposes perVisitType (V1..V_n) with {total, implemented, remaining}, plus a totals object. The top-level totals aggregate across all branches in scope."
+          }
+        },
+        {
+          "name": "GET /company/monthly-report (specific month — FRD §2.3.2)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/monthly-report?year=2026&month=8",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "monthly-report"],
+              "query": [
+                { "key": "year", "value": "2026" },
+                { "key": "month", "value": "8" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /company/monthly-report (as AM — scoped totals)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{amToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/monthly-report",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "monthly-report"]
+            },
+            "description": "FR-55: totals MUST be based only on the AM's assigned branches. If the AM is assignedToAllBranches=true, the report matches the COMPANY_USER's report. Otherwise the row count and counters reflect the explicit assignment list only."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "05 — Exports (FRD §2.2.4 + §2.3.3 + FR-35→FR-38, FR-59→FR-62)",
+      "item": [
+        {
+          "name": "GET /company/branches/export.xlsx",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/branches/export.xlsx",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "branches", "export.xlsx"]
+            },
+            "description": "Branches list as Excel (.xlsx). Honors the same query params as GET /company/branches (q, city, visitType, dateFrom, dateTo, visitStatus, year, month, etc.) — no pagination. Hard-cap: 5000 rows."
+          }
+        },
+        {
+          "name": "GET /company/branches/export.pdf",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/branches/export.pdf",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "branches", "export.pdf"]
+            },
+            "description": "Same data as branches/export.xlsx, rendered as printable A4 landscape PDF with table headers repeated on every page."
+          }
+        },
+        {
+          "name": "GET /company/branches/export.xlsx (with filters)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/branches/export.xlsx?city=Riyadh&visitStatus=IMPLEMENTED",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "branches", "export.xlsx"],
+              "query": [
+                { "key": "city", "value": "Riyadh" },
+                { "key": "visitStatus", "value": "IMPLEMENTED" }
+              ]
+            },
+            "description": "Filters compose the same way as the JSON listing. Useful for 'export only the implemented Riyadh branches' style reports."
+          }
+        },
+        {
+          "name": "GET /company/monthly-report/export.xlsx",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/monthly-report/export.xlsx",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "monthly-report", "export.xlsx"]
+            },
+            "description": "Flat Excel: one row per (brand × visit type). Accountants can pivot in Excel directly."
+          }
+        },
+        {
+          "name": "GET /company/monthly-report/export.pdf",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/monthly-report/export.pdf",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "monthly-report", "export.pdf"]
+            },
+            "description": "Same flat data as the xlsx, rendered as PDF with the grand totals printed in the subtitle band."
+          }
+        },
+        {
+          "name": "GET /company/monthly-report/export.xlsx (specific month)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/monthly-report/export.xlsx?year=2026&month=8",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "monthly-report", "export.xlsx"],
+              "query": [
+                { "key": "year", "value": "2026" },
+                { "key": "month", "value": "8" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /company/branches/export.xlsx (as AM — scoped file)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{amToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/branches/export.xlsx",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "branches", "export.xlsx"]
+            },
+            "description": "FR-37 / FR-38: exported file MUST include only the AM's assigned branches. The same scopeForUser() filter applies to JSON and file endpoints."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "06 — Contact Us (FRD §2.4 + FR-63 → FR-68)",
+      "description": "Prerequisite: run 'npm run prisma:migrate' once so the contact_messages table exists.",
+      "item": [
+        {
+          "name": "POST /company/contact (submit message — COMPANY_USER)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success && j.data?.id) {",
+                  "  pm.environment.set('contactMessageId', j.data.id);",
+                  "  console.log('✅ message id:', j.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/company/contact",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "contact"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"contact@example.com\",\n  \"phone\": \"+966501234567\",\n  \"message\": \"نحتاج توضيح بخصوص جدول الزيارات لشهر مايو.\"\n}"
+            },
+            "description": "FR-65: form captures email + phone + message. The 201 itself is the FR-67 'sent successfully' signal."
+          }
+        },
+        {
+          "name": "POST /company/contact (validation fail — empty message)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/company/contact",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "contact"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"contact@example.com\",\n  \"phone\": \"+966501234567\",\n  \"message\": \"\"\n}"
+            },
+            "description": "Empty message → 400 Validation failed. The error response is the FR-68 'failed to send' signal."
+          }
+        },
+        {
+          "name": "POST /company/contact (as AM — same endpoint)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{amToken}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/company/contact",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "contact"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"am@example.com\",\n  \"phone\": \"+966509999999\",\n  \"message\": \"Accountant Manager test message.\"\n}"
+            },
+            "description": "FR-66: AM can submit the same way. Shares the endpoint with COMPANY_USER; the row's userId distinguishes them at the admin side later."
+          }
+        },
+        {
+          "name": "GET /company/contact/my-messages (newest first)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/contact/my-messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "contact", "my-messages"]
+            },
+            "description": "Returns the caller's OWN messages with any admin replies inlined (reply, repliedAt). Pagination: page/limit query params (defaults: 1/20)."
+          }
+        },
+        {
+          "name": "GET /company/contact/my-messages?page=1&limit=5",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/contact/my-messages?page=1&limit=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "contact", "my-messages"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "5" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /company/contact (as ADMIN — MUST FAIL 403)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/company/contact",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "contact"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@bareeq.local\",\n  \"phone\": \"+966500000000\",\n  \"message\": \"This should be rejected.\"\n}"
+            },
+            "description": "Admin doesn't have Contact-Us — the form is for Company / AM only per FRD §2.4 + FR-63. Must 403."
+          }
+        }
+      ]
+    }
+  ]
+}

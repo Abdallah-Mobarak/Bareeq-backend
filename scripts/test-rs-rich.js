@@ -22,7 +22,7 @@ const stamp = Date.now();
 const company = `RichCo-${stamp}`;
 
 const main = async () => {
-  const login = await j('POST', '/auth/login', {
+  const login = await j('POST', '/auth/web/login', {
     identifier: 'admin@bareeq.local',
     password: 'Admin@12345',
   });

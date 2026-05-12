@@ -1,0 +1,1074 @@
+{
+  "info": {
+    "name": "Bareeq Manager Portal — MANAGER role",
+    "description": "Read-only manager web endpoints (FRD §3).\n\nPrerequisites:\n• A MANAGER user exists. Use the Sprint 1 admin collection to create one if needed.\n• Set `managerEmail` and `managerPassword` in the environment.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{managerToken}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "00 — Auth",
+      "item": [
+        {
+          "name": "POST /auth/web/login (MANAGER → managerToken)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success) {",
+                  "  pm.environment.set('managerToken', j.data.accessToken);",
+                  "  pm.environment.set('managerId', j.data.user.id);",
+                  "  console.log('✅ MANAGER logged in');",
+                  "} else {",
+                  "  console.log('❌ login failed:', JSON.stringify(j));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/web/login", "host": ["{{baseUrl}}"], "path": ["auth", "web", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{managerEmail}}\",\n  \"password\": \"{{managerPassword}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST /auth/mobile/login (MANAGER — MUST FAIL 403, web-only)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/mobile/login", "host": ["{{baseUrl}}"], "path": ["auth", "mobile", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{managerEmail}}\",\n  \"password\": \"{{managerPassword}}\"\n}"
+            },
+            "description": "FRD §3 — Manager web app only. Mobile login must be rejected."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "01 — Profile (FRD §3.1)",
+      "item": [
+        {
+          "name": "GET /manager/my-profile",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/my-profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "my-profile"]
+            },
+            "description": "Returns: id, role=MANAGER, name, email, phone."
+          }
+        },
+        {
+          "name": "GET /manager/my-profile (as ADMIN — MUST FAIL 403)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/my-profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "my-profile"]
+            },
+            "description": "Admins don't share the manager portal. Should return 403."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "02 — Teams List (FRD §3.2.1 / §3.2.2 / §3.2.3)",
+      "item": [
+        {
+          "name": "GET /manager/teams (default — current month)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/teams",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "teams"]
+            },
+            "description": "One row per (supervisor × company) for the current month. Each row carries: supervisor info, companyName, cities[], regions[], totalBranches, and visit/documentation counters."
+          }
+        },
+        {
+          "name": "GET /manager/teams (specific month)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/teams?year=2026&month=8",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "teams"],
+              "query": [
+                { "key": "year", "value": "2026" },
+                { "key": "month", "value": "8" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /manager/teams (search by supervisorName — FRD §3.2.2)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/teams?supervisorName=Ali",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "teams"],
+              "query": [{ "key": "supervisorName", "value": "Ali" }]
+            },
+            "description": "Case-insensitive match against either nameAr or nameEn."
+          }
+        },
+        {
+          "name": "GET /manager/teams (filters — FRD §3.2.3)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/teams?companyName=Carrefour&city=Riyadh&region=Central",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "teams"],
+              "query": [
+                { "key": "companyName", "value": "Carrefour" },
+                { "key": "city", "value": "Riyadh" },
+                { "key": "region", "value": "Central" }
+              ]
+            },
+            "description": "Filters compose — all are AND-ed together at the DB layer."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "03 — Implemented Branches (FRD §3.5)",
+      "item": [
+        {
+          "name": "GET /manager/branches (default — current month)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success && j.data?.items?.[0]) {",
+                  "  pm.environment.set('managerBranchId', j.data.items[0].id);",
+                  "  console.log('✅ stashed managerBranchId:', j.data.items[0].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/branches",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "branches"]
+            },
+            "description": "All scheduled branches across the platform for the current month. Same shape as /company/branches plus a `supervisor` field."
+          }
+        },
+        {
+          "name": "GET /manager/branches (filters + search — FRD §3.5.3/4)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/branches?companyName=Carrefour&city=Riyadh&visitType=2",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "branches"],
+              "query": [
+                { "key": "companyName", "value": "Carrefour" },
+                { "key": "city", "value": "Riyadh" },
+                { "key": "visitType", "value": "2" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /manager/branches/:id (FRD §3.5.6)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/branches/{{managerBranchId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "branches", "{{managerBranchId}}"]
+            },
+            "description": "Full branch detail (same shape as /company/branches/:id) plus the supervisor block. Run the list first to populate {{managerBranchId}}."
+          }
+        },
+        {
+          "name": "GET /manager/branches/:bogus (MUST FAIL 404)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/branches/notarealid000000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "branches", "notarealid000000000000000"]
+            },
+            "description": "Unknown id → 404 'Branch not found'."
+          }
+        },
+        {
+          "name": "GET /manager/branches/export.xlsx (FRD §3.5.5)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/branches/export.xlsx",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "branches", "export.xlsx"]
+            },
+            "description": "Excel export honoring the same filters as the JSON list. Hard cap: 5000 rows."
+          }
+        },
+        {
+          "name": "GET /manager/branches/export.pdf",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/branches/export.pdf",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "branches", "export.pdf"]
+            },
+            "description": "Same data as the Excel export, printable A4 landscape."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "04 — Reports / Monthly by Company (FRD §3.6)",
+      "item": [
+        {
+          "name": "GET /manager/reports/by-company (default — current month)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/reports/by-company",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "reports", "by-company"]
+            },
+            "description": "Per-company → per-branch breakdown with counters per V (total / implemented / remaining / documented / undocumented), plus company-level and grand totals."
+          }
+        },
+        {
+          "name": "GET /manager/reports/by-company (specific month)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/reports/by-company?year=2026&month=8",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "reports", "by-company"],
+              "query": [
+                { "key": "year", "value": "2026" },
+                { "key": "month", "value": "8" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /manager/reports/by-company?companyName=Carrefour",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/reports/by-company?companyName=Carrefour",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "reports", "by-company"],
+              "query": [{ "key": "companyName", "value": "Carrefour" }]
+            },
+            "description": "FRD §3.6.2 filter. Case-insensitive `contains` match."
+          }
+        },
+        {
+          "name": "GET /manager/reports/by-company/export.xlsx",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/reports/by-company/export.xlsx",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "reports", "by-company", "export.xlsx"]
+            },
+            "description": "Flat Excel: one row per (company × brand × V). Pivot-friendly."
+          }
+        },
+        {
+          "name": "GET /manager/reports/by-company/export.pdf",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/reports/by-company/export.pdf",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "reports", "by-company", "export.pdf"]
+            },
+            "description": "Same flat data as the xlsx; grand totals printed in the subtitle band."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "05 — Customer Tracking (FRD §3.4)",
+      "item": [
+        {
+          "name": "GET /manager/customers (default — current month)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/customers",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "customers"]
+            },
+            "description": "One row per company with mutually-exclusive status counters: implemented + remaining + notImplemented + finalClosed = totalVisits. Plus documented/undocumented on a parallel axis."
+          }
+        },
+        {
+          "name": "GET /manager/customers (specific month)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/customers?year=2026&month=8",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "customers"],
+              "query": [
+                { "key": "year", "value": "2026" },
+                { "key": "month", "value": "8" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /manager/customers?companyName=Carrefour",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/customers?companyName=Carrefour",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "customers"],
+              "query": [{ "key": "companyName", "value": "Carrefour" }]
+            },
+            "description": "FRD §3.4.2 / §3.4.3 — the only filter the FRD lists."
+          }
+        },
+        {
+          "name": "GET /manager/customers/export.xlsx (FRD §3.4.4)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/customers/export.xlsx",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "customers", "export.xlsx"]
+            }
+          }
+        },
+        {
+          "name": "GET /manager/customers/export.pdf",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/customers/export.pdf",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "customers", "export.pdf"]
+            },
+            "description": "Same row set as the xlsx; grand totals printed in the subtitle band."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "06 — Daily Visits (FRD §3.3)",
+      "item": [
+        {
+          "name": "GET /manager/daily-visits (default — this month so far)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/daily-visits",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "daily-visits"]
+            },
+            "description": "One row per supervisor. Counters: totalVisits, implemented, remaining. Computed work fields: startWorkDate (first time they clicked Start), endWorkDate (last time they completed), daysWorked (distinct work days). Supervisors with scheduled visits but zero work still appear (startWorkDate=null, daysWorked=0)."
+          }
+        },
+        {
+          "name": "GET /manager/daily-visits (specific date range — FRD §3.3.2)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/daily-visits?startDate=2026-05-01&endDate=2026-05-31",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "daily-visits"],
+              "query": [
+                { "key": "startDate", "value": "2026-05-01" },
+                { "key": "endDate", "value": "2026-05-31" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /manager/daily-visits?supervisorName=Ali",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/daily-visits?supervisorName=Ali",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "daily-visits"],
+              "query": [{ "key": "supervisorName", "value": "Ali" }]
+            },
+            "description": "Case-insensitive match against nameAr OR nameEn."
+          }
+        },
+        {
+          "name": "GET /manager/daily-visits/export.xlsx (FRD §3.3.4)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/daily-visits/export.xlsx",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "daily-visits", "export.xlsx"]
+            }
+          }
+        },
+        {
+          "name": "GET /manager/daily-visits/export.pdf",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/daily-visits/export.pdf",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "daily-visits", "export.pdf"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "07 — Overall Reports (FRD §3.12)",
+      "item": [
+        {
+          "name": "GET /manager/reports/summary (current month)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/reports/summary",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "reports", "summary"]
+            },
+            "description": "FRD §3.12.1. Returns regionCount, branchCount, scheduled, implemented, unimplemented (= scheduled − implemented), completionRate (%)."
+          }
+        },
+        {
+          "name": "GET /manager/reports/summary?year=2026&month=8",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/reports/summary?year=2026&month=8",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "reports", "summary"],
+              "query": [
+                { "key": "year", "value": "2026" },
+                { "key": "month", "value": "8" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /manager/reports/regional",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/reports/regional",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "reports", "regional"]
+            },
+            "description": "FRD §3.12.2. One row per region with branchCount, scheduled, implemented, unimplemented, completionRate."
+          }
+        },
+        {
+          "name": "GET /manager/reports/regional?region=Central",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/reports/regional?region=Central",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "reports", "regional"],
+              "query": [{ "key": "region", "value": "Central" }]
+            }
+          }
+        },
+        {
+          "name": "GET /manager/reports/analysis (year-long series)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/reports/analysis",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "reports", "analysis"]
+            },
+            "description": "FRD §3.12.3. Flat data array: one row per (month × region) for ALL 12 months of the year. Months with zero scheduled visits return all-zero counters — ready for direct bar-chart rendering."
+          }
+        },
+        {
+          "name": "GET /manager/reports/analysis?year=2026&region=Central",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/reports/analysis?year=2026&region=Central",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "reports", "analysis"],
+              "query": [
+                { "key": "year", "value": "2026" },
+                { "key": "region", "value": "Central" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "08 — Additional Tasks (FRD §3.9)",
+      "description": "Prerequisite: run 'npm run prisma:migrate' once so the additional_tasks table exists. Also: set {{supervisorId}} in the environment to an existing supervisor before creating tasks.",
+      "item": [
+        {
+          "name": "POST /manager/additional-tasks (create)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success && j.data?.id) {",
+                  "  pm.environment.set('additionalTaskId', j.data.id);",
+                  "  console.log('✅ task id:', j.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/manager/additional-tasks",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "additional-tasks"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supervisorId\": \"{{supervisorId}}\",\n  \"companyName\": \"Carrefour\",\n  \"branchName\": \"Carrefour\",\n  \"categoryName\": \"Hypermarket\",\n  \"address\": \"الرياض - حي الورود\",\n  \"location\": \"https://maps.google.com/?q=24.71,46.71\",\n  \"latitude\": 24.71,\n  \"longitude\": 46.71,\n  \"visitDate\": \"2026-05-20\",\n  \"price\": 500,\n  \"notes\": \"زيارة إضافية للمتابعة\"\n}"
+            },
+            "description": "FRD §3.9.2 — required fields: supervisorId, companyName, address, visitDate. Everything else optional."
+          }
+        },
+        {
+          "name": "GET /manager/additional-tasks (list)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/additional-tasks",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "additional-tasks"]
+            },
+            "description": "Paginated list. Each row carries manager + supervisor info, address, status, documentation status."
+          }
+        },
+        {
+          "name": "GET /manager/additional-tasks (search + filter)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/additional-tasks?companyName=Carrefour&status=REMAINING",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "additional-tasks"],
+              "query": [
+                { "key": "companyName", "value": "Carrefour" },
+                { "key": "status", "value": "REMAINING" }
+              ]
+            },
+            "description": "FRD §3.9.3 + §3.9.4. Supported: supervisorId/Name, companyName, branchName, brandName, address, status, documentationStatus, dateFrom, dateTo."
+          }
+        },
+        {
+          "name": "GET /manager/additional-tasks/:id",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/additional-tasks/{{additionalTaskId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "additional-tasks", "{{additionalTaskId}}"]
+            }
+          }
+        },
+        {
+          "name": "PATCH /manager/additional-tasks/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/manager/additional-tasks/{{additionalTaskId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "additional-tasks", "{{additionalTaskId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 750,\n  \"notes\": \"تم تعديل السعر\"\n}"
+            },
+            "description": "Send only the fields you want to change. Empty body returns 400."
+          }
+        },
+        {
+          "name": "DELETE /manager/additional-tasks/:id",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/manager/additional-tasks/{{additionalTaskId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "additional-tasks", "{{additionalTaskId}}"]
+            },
+            "description": "Soft delete — row stays in DB with deletedAt set."
+          }
+        },
+        {
+          "name": "GET /manager/additional-tasks/export.xlsx",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/additional-tasks/export.xlsx",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "additional-tasks", "export.xlsx"]
+            }
+          }
+        },
+        {
+          "name": "GET /manager/additional-tasks/export.pdf",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/additional-tasks/export.pdf",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "additional-tasks", "export.pdf"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "09 — Monthly Sales / Clients (FRD §3.7)",
+      "description": "Prerequisite: run 'npm run prisma:migrate' once so the clients table exists.",
+      "item": [
+        {
+          "name": "POST /manager/clients (create)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success && j.data?.id) {",
+                  "  pm.environment.set('clientId', j.data.id);",
+                  "  console.log('✅ client id:', j.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/manager/clients",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "clients"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Carrefour KSA\",\n  \"contractType\": \"Monthly\",\n  \"statement\": \"عقد متابعة شهري لجميع فروع المملكة\",\n  \"website\": \"https://carrefour.sa\",\n  \"price\": 25000,\n  \"taxType\": \"VAT 15%\",\n  \"date\": \"2026-05-01\",\n  \"contractStatus\": \"Active\",\n  \"notes\": \"تجديد سنوي\"\n}"
+            },
+            "description": "FRD §3.7.2 — required: name + date. Everything else optional. contractType / taxType / contractStatus are admin-managed lookups stored as strings until the lookup tables ship."
+          }
+        },
+        {
+          "name": "GET /manager/clients (list)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/clients",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "clients"]
+            }
+          }
+        },
+        {
+          "name": "GET /manager/clients (filter — FRD §3.7.4)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/clients?contractStatus=Active&minPrice=1000&maxPrice=50000",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "clients"],
+              "query": [
+                { "key": "contractStatus", "value": "Active" },
+                { "key": "minPrice", "value": "1000" },
+                { "key": "maxPrice", "value": "50000" }
+              ]
+            },
+            "description": "Price exposed as a range (minPrice/maxPrice) so the UI can offer a slider."
+          }
+        },
+        {
+          "name": "GET /manager/clients/:id (FRD §3.7.6)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/clients/{{clientId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "clients", "{{clientId}}"]
+            }
+          }
+        },
+        {
+          "name": "PATCH /manager/clients/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/manager/clients/{{clientId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "clients", "{{clientId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 28000,\n  \"contractStatus\": \"Renewed\"\n}"
+            },
+            "description": "Send only the fields you want to change. Empty body → 400."
+          }
+        },
+        {
+          "name": "DELETE /manager/clients/:id",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/manager/clients/{{clientId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "clients", "{{clientId}}"]
+            },
+            "description": "Soft delete — sets deletedAt."
+          }
+        },
+        {
+          "name": "GET /manager/clients/export.xlsx (FRD §3.7.5)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/clients/export.xlsx",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "clients", "export.xlsx"]
+            }
+          }
+        },
+        {
+          "name": "GET /manager/clients/export.pdf",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/clients/export.pdf",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "clients", "export.pdf"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "10 — Car Cases (FRD §3.8)",
+      "description": "Prerequisite: run 'npm run prisma:migrate' once so the car_cases table exists. Also: set {{supervisorId}} in the environment to an existing supervisor before creating cases.",
+      "item": [
+        {
+          "name": "POST /manager/car-cases (create)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success && j.data?.id) {",
+                  "  pm.environment.set('carCaseId', j.data.id);",
+                  "  console.log('✅ car case id:', j.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/manager/car-cases",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "car-cases"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supervisorId\": \"{{supervisorId}}\",\n  \"area\": \"الرياض\",\n  \"licensePlate\": \"ABC-1234\",\n  \"vehicleCondition\": \"ممتاز\",\n  \"oilChangeDate\": \"2026-04-15\",\n  \"notes\": \"الصيانة الدورية تمت\"\n}"
+            },
+            "description": "FRD §3.8.2 — required: supervisorId, area, licensePlate, vehicleCondition. Admin-managed lookups stored as strings until lookup tables ship."
+          }
+        },
+        {
+          "name": "GET /manager/car-cases (list)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/car-cases",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "car-cases"]
+            }
+          }
+        },
+        {
+          "name": "GET /manager/car-cases (search + filter — FRD §3.8.3/4)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/car-cases?area=الرياض&vehicleCondition=ممتاز",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "car-cases"],
+              "query": [
+                { "key": "area", "value": "الرياض" },
+                { "key": "vehicleCondition", "value": "ممتاز" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /manager/car-cases/:id (FRD §3.8.6)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/car-cases/{{carCaseId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "car-cases", "{{carCaseId}}"]
+            }
+          }
+        },
+        {
+          "name": "PATCH /manager/car-cases/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/manager/car-cases/{{carCaseId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "car-cases", "{{carCaseId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleCondition\": \"يحتاج صيانة\",\n  \"notes\": \"بحاجة لتغيير الإطارات\"\n}"
+            }
+          }
+        },
+        {
+          "name": "DELETE /manager/car-cases/:id",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/manager/car-cases/{{carCaseId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "car-cases", "{{carCaseId}}"]
+            }
+          }
+        },
+        {
+          "name": "GET /manager/car-cases/export.xlsx (FRD §3.8.5)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/car-cases/export.xlsx",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "car-cases", "export.xlsx"]
+            }
+          }
+        },
+        {
+          "name": "GET /manager/car-cases/export.pdf",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/car-cases/export.pdf",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "car-cases", "export.pdf"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "11 — Representatives (FRD §3.10)",
+      "description": "Prerequisite: run 'npm run prisma:migrate' once so the representatives table exists. Price is computed server-side from hourlyRate × numberOfWorkers × numberOfHours — never trusted from the client.",
+      "item": [
+        {
+          "name": "POST /manager/representatives (price auto-computed)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success && j.data?.id) {",
+                  "  pm.environment.set('representativeId', j.data.id);",
+                  "  console.log('✅ rep id:', j.data.id, '— computed price:', j.data.price);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/manager/representatives",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "representatives"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientName\": \"Lulu Hypermarket\",\n  \"serviceType\": \"Mystery Shopper\",\n  \"hourlyRate\": 50,\n  \"numberOfWorkers\": 3,\n  \"numberOfHours\": 8,\n  \"dateOfAgreement\": \"2026-05-12\",\n  \"customerPhoneNumber\": \"+966500111222\"\n}"
+            },
+            "description": "FRD §3.10.2 — price MUST be computed server-side. Body above yields price = 50 × 3 × 8 = 1200 SAR."
+          }
+        },
+        {
+          "name": "POST /manager/representatives (try to spoof price — server ignores it)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/manager/representatives",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "representatives"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientName\": \"Test\",\n  \"serviceType\": \"X\",\n  \"hourlyRate\": 100,\n  \"numberOfWorkers\": 2,\n  \"numberOfHours\": 4,\n  \"dateOfAgreement\": \"2026-05-12\",\n  \"price\": 1\n}"
+            },
+            "description": "The body sends price=1, but the server recomputes from inputs: 100 × 2 × 4 = 800. This is the security boundary."
+          }
+        },
+        {
+          "name": "GET /manager/representatives (list)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/representatives",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "representatives"]
+            }
+          }
+        },
+        {
+          "name": "GET /manager/representatives (search — FRD §3.10.3)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/representatives?clientName=Lulu&dateFrom=2026-05-01",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "representatives"],
+              "query": [
+                { "key": "clientName", "value": "Lulu" },
+                { "key": "dateFrom", "value": "2026-05-01" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /manager/representatives/:id (FRD §3.10.6)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/representatives/{{representativeId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "representatives", "{{representativeId}}"]
+            }
+          }
+        },
+        {
+          "name": "PATCH /manager/representatives/:id (recomputes price)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/manager/representatives/{{representativeId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "representatives", "{{representativeId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"numberOfWorkers\": 5\n}"
+            },
+            "description": "Changing any of (hourlyRate, numberOfWorkers, numberOfHours) recomputes price using the merged inputs. Other fields stay as-is — no need to resend everything."
+          }
+        },
+        {
+          "name": "DELETE /manager/representatives/:id",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/manager/representatives/{{representativeId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "representatives", "{{representativeId}}"]
+            }
+          }
+        },
+        {
+          "name": "GET /manager/representatives/export.xlsx (FRD §3.10.5)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/representatives/export.xlsx",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "representatives", "export.xlsx"]
+            }
+          }
+        },
+        {
+          "name": "GET /manager/representatives/export.pdf",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/representatives/export.pdf",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "representatives", "export.pdf"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

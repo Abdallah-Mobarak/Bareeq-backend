@@ -19,6 +19,13 @@ const regionSchedulingsRoutes = require('../modules/region-schedulings/region-sc
 const monthlySchedulesRoutes = require('../modules/monthly-schedules/monthly-schedules.routes');
 const scheduledVisitsRoutes = require('../modules/scheduled-visits/scheduled-visits.routes');
 const supervisorScheduleRoutes = require('../modules/supervisor-schedule/supervisor-schedule.routes');
+const supervisorAdditionalTasksRoutes = require('../modules/supervisor-additional-tasks/supervisor-additional-tasks.routes');
+const companyPortalRoutes = require('../modules/company-portal/company-portal.routes');
+const managerPortalRoutes = require('../modules/manager-portal/manager-portal.routes');
+const managerMonthlySalesRoutes = require('../modules/manager-monthly-sales/manager-monthly-sales.routes');
+const managerCarCaseRoutes = require('../modules/manager-car-case/manager-car-case.routes');
+const managerRepresentativesRoutes = require('../modules/manager-representatives/manager-representatives.routes');
+const adminContactMessagesRoutes = require('../modules/admin-contact-messages/admin-contact-messages.routes');
 const visitInstancesRoutes = require('../modules/visit-instances/visit-instances.routes');
 const {
   supervisorRouter: visitDocSupervisorRoutes,
@@ -53,6 +60,13 @@ router.use('/region-schedulings', regionSchedulingsRoutes);
 router.use('/monthly-schedules', monthlySchedulesRoutes);
 router.use('/scheduled-visits', scheduledVisitsRoutes);
 router.use('/supervisor', supervisorScheduleRoutes);
+router.use('/supervisor/additional-tasks', supervisorAdditionalTasksRoutes);
+router.use('/company', companyPortalRoutes);
+router.use('/manager', managerPortalRoutes);
+router.use('/manager/clients', managerMonthlySalesRoutes);
+router.use('/manager/car-cases', managerCarCaseRoutes);
+router.use('/manager/representatives', managerRepresentativesRoutes);
+router.use('/admin/contact-messages', adminContactMessagesRoutes);
 router.use('/visit-instances', visitInstancesRoutes);
 router.use('/visit-instances', visitDocSupervisorRoutes);
 router.use('/public/document', visitDocPublicRoutes);

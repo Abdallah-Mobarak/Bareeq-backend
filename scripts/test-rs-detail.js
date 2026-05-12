@@ -2,7 +2,7 @@
 const BASE = 'http://localhost:3000/api/v1';
 
 const main = async () => {
-  const login = await fetch(`${BASE}/auth/login`, {
+  const login = await fetch(`${BASE}/auth/web/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

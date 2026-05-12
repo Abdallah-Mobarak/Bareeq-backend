@@ -28,6 +28,17 @@ const routes = require('./routes');
  */
 const app = express();
 
+/**
+ * Use the `qs` library for query parsing (Express's "extended" mode)
+ * so that array-style query strings work. We need this for endpoints
+ * that accept lists like `?ids[]=a&ids[]=b` — the simple parser maps
+ * those to `req.query['ids[]']` instead of `req.query.ids`.
+ *
+ * Comma-separated and repeated forms (?ids=a,b and ?ids=a&ids=b) work
+ * with either parser.
+ */
+app.set('query parser', 'extended');
+
 // 1-3: Security, CORS, compression
 app.use(helmet());
 app.use(cors());

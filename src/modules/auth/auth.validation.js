@@ -1,24 +1,24 @@
 const Joi = require('joi');
 
 /**
- * POST /auth/login
+ * POST /auth/web/login   and   POST /auth/mobile/login
  * Body: { identifier, password, deviceInfo? }
  *
  * `identifier` is either an email or a phone number; the service decides
  * which by checking for an `@`. We don't enforce a phone format here
  * because Saudi phone formats vary (+966, 05, etc.) and the FRD does not
  * pin a single shape down.
- */
-/**
- * `clientType` distinguishes which client is logging in. Used to enforce
- * "supervisors are mobile-only" — see auth.service.js. Defaults to "web"
- * for backward compatibility (existing dashboard requests don't send it).
+ *
+ * `clientType` is NOT a body field — it's encoded in the URL itself
+ * (/auth/web/* vs /auth/mobile/*) and passed by the controller to the
+ * service. Putting it in the body would let any client lie about which
+ * surface they are; the URL split makes the intent explicit and the
+ * service's ROLE_CLIENT_MAP enforces the policy.
  */
 const loginSchema = Joi.object({
   identifier: Joi.string().trim().min(3).max(100).required(),
   password: Joi.string().min(6).max(100).required(),
   deviceInfo: Joi.string().max(255).optional().allow(null, ''),
-  clientType: Joi.string().valid('web', 'mobile').default('web'),
 });
 
 /**

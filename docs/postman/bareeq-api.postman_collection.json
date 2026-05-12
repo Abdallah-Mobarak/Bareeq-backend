@@ -30,7 +30,7 @@
       "name": "01 — Auth",
       "item": [
         {
-          "name": "POST /auth/login",
+          "name": "POST /auth/web/login (admin)",
           "event": [
             {
               "listen": "test",
@@ -50,7 +50,7 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "url": { "raw": "{{baseUrl}}/auth/web/login", "host": ["{{baseUrl}}"], "path": ["auth", "web", "login"] },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"identifier\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"

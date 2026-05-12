@@ -2,26 +2,35 @@ const { asyncHandler } = require('../../utils/asyncHandler');
 const authService = require('./auth.service');
 
 /**
- * POST /auth/login — public.
- * Body validated by auth.validation.loginSchema.
+ * Shared login handler — same code path for both surfaces, only the
+ * `clientType` differs. The split into webLogin/mobileLogin lives at
+ * the route level (POST /auth/web/login vs /auth/mobile/login) so the
+ * URL itself declares which surface is logging in.
  *
  * Falls back to the User-Agent header if the client doesn't send `deviceInfo`.
  * That gives us at least a hint of which device a refresh token belongs to,
  * useful for the future "list active sessions" endpoint.
  */
-const login = asyncHandler(async (req, res) => {
-  const result = await authService.login({
-    identifier: req.body.identifier,
-    password: req.body.password,
-    deviceInfo: req.body.deviceInfo || req.get('user-agent') || null,
-    clientType: req.body.clientType,
+const handleLogin = (clientType) =>
+  asyncHandler(async (req, res) => {
+    const result = await authService.login({
+      identifier: req.body.identifier,
+      password: req.body.password,
+      deviceInfo: req.body.deviceInfo || req.get('user-agent') || null,
+      clientType,
+    });
+
+    res.json({
+      success: true,
+      data: result,
+    });
   });
 
-  res.json({
-    success: true,
-    data: result,
-  });
-});
+/** POST /auth/web/login — dashboard surface (admin, manager, company, AM). */
+const webLogin = handleLogin('web');
+
+/** POST /auth/mobile/login — mobile surface (supervisor). */
+const mobileLogin = handleLogin('mobile');
 
 /**
  * POST /auth/refresh — public.
@@ -67,4 +76,4 @@ const me = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports = { login, refresh, logout, me };
+module.exports = { webLogin, mobileLogin, refresh, logout, me };

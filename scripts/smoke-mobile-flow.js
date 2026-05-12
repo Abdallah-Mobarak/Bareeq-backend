@@ -38,10 +38,9 @@ const log = (label, r) =>
 
 const main = async () => {
   // 1. admin login (web)
-  let r = await j('POST', '/auth/login', {
+  let r = await j('POST', '/auth/web/login', {
     identifier: 'admin@bareeq.local',
     password: 'Admin@12345',
-    clientType: 'web',
   });
   adminToken = r.data.data.accessToken;
   console.log('1. ✅ admin logged in (web)');
@@ -103,29 +102,26 @@ const main = async () => {
   const v3Id = sv.instances[2].id;
   console.log('2c. ✅ schedule created. V1/V2/V3 ids:', v1Id, v2Id, v3Id);
 
-  // 3. Supervisor tries WEB login — must fail
-  r = await j('POST', '/auth/login', {
+  // 3. Supervisor tries WEB login — must fail (supervisor is mobile-only)
+  r = await j('POST', '/auth/web/login', {
     identifier: supBody.email,
     password: supBody.password,
-    clientType: 'web',
   });
   console.log(`3. ${r.status === 403 ? '✅' : '❌'} sup web login rejected (${r.status})`);
 
   // 4. Supervisor MOBILE login
-  r = await j('POST', '/auth/login', {
+  r = await j('POST', '/auth/mobile/login', {
     identifier: supBody.email,
     password: supBody.password,
-    clientType: 'mobile',
   });
   if (r.status !== 200) return console.log('sup mobile login FAIL:', r);
   supToken = r.data.data.accessToken;
   console.log('4. ✅ sup mobile login ok');
 
-  // Bonus: admin tries MOBILE login — must fail
-  r = await j('POST', '/auth/login', {
+  // Bonus: admin tries MOBILE login — must fail (admin is web-only)
+  r = await j('POST', '/auth/mobile/login', {
     identifier: 'admin@bareeq.local',
     password: 'Admin@12345',
-    clientType: 'mobile',
   });
   console.log(`4b. ${r.status === 403 ? '✅' : '❌'} admin mobile login rejected (${r.status})`);
 

@@ -6,7 +6,7 @@ const { ApiError } = require('../utils/ApiError');
  * sanitized value (extra fields stripped, types coerced, defaults applied).
  *
  * Usage:
- *   router.post('/login', validate(loginSchema), controller.login);
+ *   router.post('/web/login', validate(loginSchema), controller.webLogin);
  *   router.get('/branches', validate(filterSchema, 'query'), controller.list);
  */
 const validate =

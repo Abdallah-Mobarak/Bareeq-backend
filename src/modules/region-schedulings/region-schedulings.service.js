@@ -216,6 +216,7 @@ const list = async ({
   city,
   visitType,
   code,
+  ids,
   sort,
 }) => {
   const skip = (page - 1) * limit;
@@ -226,6 +227,12 @@ const list = async ({
    */
   const where = {
     deletedAt: null,
+    /**
+     * `ids` is the "export selection" escape hatch — when present
+     * everything is restricted to that set, but other filters still
+     * AND on top (so an empty-ish search inside the selection works).
+     */
+    ...(ids && ids.length > 0 && { id: { in: ids } }),
     ...(q && {
       OR: [
         { companyName: { contains: q, mode: 'insensitive' } },

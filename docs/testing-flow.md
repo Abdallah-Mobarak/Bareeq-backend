@@ -22,7 +22,7 @@ This is the recommended order to test the system end-to-end. Use it with the Pos
 | # | Request | Expected | What it proves |
 |---|---------|----------|----------------|
 | 1 | `GET /health` | 200, `checks.database.ok=true` | Server up, DB connected |
-| 2 | `POST /auth/login` (admin creds) | 200, returns access + refresh + user | Login works, tokens auto-saved |
+| 2 | `POST /auth/web/login` (admin creds) | 200, returns access + refresh + user | Login works, tokens auto-saved |
 | 3 | `GET /auth/me` | 200, returns admin user | Bearer auth works |
 | 4 | `POST /auth/refresh` | 200, NEW tokens | Refresh rotation works |
 
@@ -54,14 +54,14 @@ Build the prerequisite data needed for branches.
 | 9 | `POST /managers` | 201 | Captures `managerId` |
 | 10 | `POST /supervisors` | 201 | Captures `supervisorId` |
 | 11 | `POST /companies` | 201 | Atomically creates Company + login User |
-| 12 | `POST /auth/login` (with company creds) | 200 | Verify company can log in |
-| 13 | `POST /auth/login` (with manager creds) | 200 | Verify manager can log in |
+| 12 | `POST /auth/web/login` (with company creds) | 200 | Verify company can log in (FRD §2 — Companies are mobile+web, web tested here) |
+| 13 | `POST /auth/web/login` (with manager creds) | 200 | Verify manager can log in |
 
 **After step 13, switch the login back to admin** so the rest of the flow uses the admin token.
 
 **Edge cases:**
 - `POST /managers` with same email again → 409 "Email or phone already in use"
-- `PATCH /managers/{id}/status` to BLOCKED, then `POST /auth/login` as that manager → 403 "Account is blocked"
+- `PATCH /managers/{id}/status` to BLOCKED, then `POST /auth/web/login` as that manager → 403 "Account is blocked"
 - Re-enable: `PATCH /managers/{id}/status` to ENABLED → login works again
 
 ---
@@ -105,7 +105,7 @@ You must delete in this order because of cascade-protection rules.
 
 If you only have 5 minutes and want to verify the system is alive:
 
-1. `POST /auth/login` (admin)
+1. `POST /auth/web/login` (admin)
 2. `GET /auth/me` (verify Bearer auth)
 3. `POST /regions` (verify writes)
 4. `GET /regions` (verify reads + pagination)

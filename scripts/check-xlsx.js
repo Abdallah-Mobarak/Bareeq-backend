@@ -4,13 +4,12 @@ const ExcelJS = require('exceljs');
 const BASE = 'http://localhost:3000/api/v1';
 
 (async () => {
-  const login = await fetch(`${BASE}/auth/login`, {
+  const login = await fetch(`${BASE}/auth/web/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       identifier: 'admin@bareeq.local',
       password: 'Admin@12345',
-      clientType: 'web',
     }),
   });
   const t = (await login.json()).data.accessToken;

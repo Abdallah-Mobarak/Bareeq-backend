@@ -44,17 +44,25 @@ enum ScheduledVisitType {
 
 /// Lifecycle of a single visit instance (V1 / V2 / V3 / V4).
 enum VisitStatus {
-  REMAINING       // no action yet (default)
-  UNDERWAY        // started but not finished
-  IMPLEMENTED     // completed
+  REMAINING // no action yet (default)
+  UNDERWAY // started but not finished
+  IMPLEMENTED // completed
   NOT_IMPLEMENTED // skipped with a reason
-  FINAL_CLOSED    // branch permanently closed; cascades to remaining V's
+  FINAL_CLOSED // branch permanently closed; cascades to remaining V's
 }
 
 /// Whether the branch manager has documented this visit.
 enum DocumentationStatus {
   DOCUMENTED
   UNDOCUMENTED
+}
+
+/// Lifecycle of a Contact-Us message from a Company / AM user to admins.
+/// PENDING → freshly sent, awaiting admin response.
+/// REPLIED → admin has filled in `reply` and `repliedAt`.
+enum ContactMessageStatus {
+  PENDING
+  REPLIED
 }
 
 // ============================================
@@ -99,12 +107,20 @@ model User {
   /// Ignored for any other role.
   assignedToAllBranches Boolean @default(false) @map("assigned_to_all_branches")
 
-  refreshTokens     RefreshToken[]
-  monthlySchedules  MonthlySchedule[]
-  assignedTasks     ScheduledVisit[]  @relation("AssignedByManager")
-  receivedTasks     ScheduledVisit[]  @relation("AssignedToSupervisor")
+  refreshTokens               RefreshToken[]
+  monthlySchedules            MonthlySchedule[]
+  assignedTasks               ScheduledVisit[]                    @relation("AssignedByManager")
+  receivedTasks               ScheduledVisit[]                    @relation("AssignedToSupervisor")
   accountantBranchAssignments AccountantManagerRegionScheduling[]
-  managerTasks      ManagerTask[]    @relation("AssignedToManager")
+  managerTasks                ManagerTask[]                       @relation("AssignedToManager")
+  contactMessagesSent         ContactMessage[]                    @relation("ContactMessageSender")
+  contactMessagesReplied      ContactMessage[]                    @relation("ContactMessageAdmin")
+  additionalTasksAssigned     AdditionalTask[]                    @relation("AdditionalTaskAssignedBy")
+  additionalTasksReceived     AdditionalTask[]                    @relation("AdditionalTaskAssignedTo")
+  clients                     Client[]                            @relation("ClientCreatedBy")
+  carCasesCreated             CarCase[]                           @relation("CarCaseCreatedBy")
+  carCasesAssigned            CarCase[]                           @relation("CarCaseSupervisor")
+  representatives             Representative[]                    @relation("RepresentativeCreatedBy")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -122,8 +138,8 @@ model User {
 /// creates a manager or admin (FRD §4.2.1.1.2 / §4.2.3.1.2), they pick
 /// any role from a single unified list.
 model PermissionRole {
-  id          String     @id @default(cuid())
-  name        String     @unique
+  id   String @id @default(cuid())
+  name String @unique
 
   users       User[]
   permissions PermissionRolePermission[]
@@ -194,8 +210,8 @@ model RefreshToken {
 
 /// Geographic region. Cities and branches reference it.
 model Region {
-  id     String @id @default(cuid())
-  nameAr String @map("name_ar")
+  id     String  @id @default(cuid())
+  nameAr String  @map("name_ar")
   nameEn String? @map("name_en")
 
   cities   City[]
@@ -211,10 +227,10 @@ model Region {
 
 /// City within a region. Branches reference both region and city.
 model City {
-  id       String @id @default(cuid())
-  regionId String @map("region_id")
-  region   Region @relation(fields: [regionId], references: [id])
-  nameAr   String @map("name_ar")
+  id       String  @id @default(cuid())
+  regionId String  @map("region_id")
+  region   Region  @relation(fields: [regionId], references: [id])
+  nameAr   String  @map("name_ar")
   nameEn   String? @map("name_en")
 
   branches Branch[]
@@ -231,8 +247,8 @@ model City {
 /// Admin-managed list of reasons a supervisor can pick when marking a
 /// visit as "Not Implemented". Visit instances FK into this table.
 model NotImplementedReason {
-  id      String @id @default(cuid())
-  titleAr String @map("title_ar")
+  id      String  @id @default(cuid())
+  titleAr String  @map("title_ar")
   titleEn String? @map("title_en")
 
   visitInstances VisitInstance[]
@@ -259,22 +275,22 @@ model NotImplementedReason {
 /// to visit. The actual visit instances (V1..V4) are generated later
 /// when an admin assigns a supervisor and a start date.
 model RegionScheduling {
-  id           String  @id @default(cuid())
-  companyName  String  @map("company_name")
-  branchName   String  @map("branch_name")
-  categoryName String? @map("category_name")
-  branchNumber String? @map("branch_number")
-  city         String
-  region       String
-  address      String?
+  id             String   @id @default(cuid())
+  companyName    String   @map("company_name")
+  branchName     String   @map("branch_name")
+  categoryName   String?  @map("category_name")
+  branchNumber   String?  @map("branch_number")
+  city           String
+  region         String
+  address        String?
   /// Free-text location field. The admin pastes a Google Maps link
   /// or "lat,lng" string here; the service parses out latitude /
   /// longitude on save and keeps the original text for display.
-  location     String?
-  latitude     Decimal?
-  longitude    Decimal?
+  location       String?
+  latitude       Decimal?
+  longitude      Decimal?
   /// 1..4 — drives how many V's are generated and the visit-type list.
-  numberOfVisits Int    @default(1) @map("number_of_visits")
+  numberOfVisits Int      @default(1) @map("number_of_visits")
   code           String?
 
   requiredTasks         RegionSchedulingTask[]
@@ -300,10 +316,10 @@ model RegionSchedulingTask {
   regionSchedulingId String           @map("region_scheduling_id")
   regionScheduling   RegionScheduling @relation(fields: [regionSchedulingId], references: [id], onDelete: Cascade)
   /// 1=V1, 2=V2, 3=V3, 4=V4
-  visitType Int    @map("visit_type")
-  titleAr   String @map("title_ar")
-  titleEn   String? @map("title_en")
-  sortOrder Int    @default(0) @map("sort_order")
+  visitType          Int              @map("visit_type")
+  titleAr            String           @map("title_ar")
+  titleEn            String?          @map("title_en")
+  sortOrder          Int              @default(0) @map("sort_order")
 
   /// Per-visit instances of this task that the supervisor checks off.
   visitChecks VisitInstanceTaskCheck[]
@@ -358,6 +374,238 @@ model ManagerTask {
 }
 
 // ============================================
+// CONTACT-US MESSAGES — FRD §2.4 + §4.12 + FR-63 → FR-68
+// ============================================
+
+/// A message sent from a COMPANY_USER or ACCOUNTANT_MANAGER to admins
+/// through the in-app Contact form. The admin sees the list in §4.12
+/// and may reply; the user then pulls /company/contact/my-messages and
+/// reads the reply (or receives a notification when we wire that up).
+///
+/// We store `email` and `phone` separately from the User.email/phone
+/// because FR-65 explicitly asks the sender to fill them in on the
+/// form, which suggests they may differ from the login identity
+/// (e.g. a company assistant filing a ticket on someone's behalf).
+model ContactMessage {
+  id     String @id @default(cuid())
+  userId String @map("user_id")
+  user   User   @relation("ContactMessageSender", fields: [userId], references: [id], onDelete: Cascade)
+
+  email   String
+  phone   String
+  message String
+
+  status ContactMessageStatus @default(PENDING)
+
+  // Admin reply — populated only after an admin acts. Null until then.
+  reply            String?
+  repliedAt        DateTime? @map("replied_at")
+  repliedByAdminId String?   @map("replied_by_admin_id")
+  repliedBy        User?     @relation("ContactMessageAdmin", fields: [repliedByAdminId], references: [id])
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@map("contact_messages")
+}
+
+// ============================================
+// ADDITIONAL TASKS — FRD §1.4 + §3.9
+// ============================================
+
+/// Manager-assigned ad-hoc visits, outside the regular monthly schedule.
+/// Unlike a ScheduledVisit which derives its location from RegionScheduling,
+/// an AdditionalTask carries its own company / branch / address fields
+/// because it can target any place — even one not in the catalog.
+///
+/// Phase C.1 covers the manager-side CRUD only. The supervisor's visit
+/// lifecycle (start / complete / photos / OTP) lands in Phase C.2 and
+/// will fill in startedAt / endedAt / documentation fields.
+model AdditionalTask {
+  id String @id @default(cuid())
+
+  managerId    String @map("manager_id")
+  manager      User   @relation("AdditionalTaskAssignedBy", fields: [managerId], references: [id])
+  supervisorId String @map("supervisor_id")
+  supervisor   User   @relation("AdditionalTaskAssignedTo", fields: [supervisorId], references: [id])
+
+  // Free-text destination — FRD §3.9.2 lists Company / Brand / Address
+  // as separate fields, not foreign keys. The manager types them in.
+  companyName  String  @map("company_name")
+  branchName   String? @map("branch_name")
+  categoryName String? @map("category_name")
+  address      String
+  /// Google Maps URL or lat,lng text — same convention as RegionScheduling.
+  location     String?
+  latitude     Decimal?
+  longitude    Decimal?
+
+  visitDate DateTime @map("visit_date")
+  price     Decimal?
+  notes     String?
+
+  // Visit state — set by the supervisor in Phase C.2. We default to
+  // REMAINING so a freshly-created task is immediately discoverable in
+  // the supervisor's pending list.
+  status              VisitStatus         @default(REMAINING)
+  documentationStatus DocumentationStatus @default(UNDOCUMENTED)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([managerId])
+  @@index([supervisorId])
+  @@index([visitDate])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("additional_tasks")
+}
+
+// ============================================
+// MONTHLY SALES / CLIENTS — FRD §3.7 + §4.9
+// ============================================
+
+/// Sales contract / client record managed by managers.
+///
+/// FRD §3.7.2 references three admin-managed lookups:
+///   • Contract Type
+///   • Tax (Tax Type)
+///   • Contract Status
+/// For Phase D.1 we store them as free-text strings — the manager UI
+/// can ship dropdowns with hard-coded values. When the admin module
+/// builds out those lookup tables in a later phase, a migration will
+/// convert these to FKs without changing the API contract (the API
+/// will accept either an id or the legacy string).
+model Client {
+  id String @id @default(cuid())
+
+  /// The manager who created the client record. We keep it so future
+  /// reports can attribute sales to specific managers per FRD §4.9.1.
+  managerId String @map("manager_id")
+  manager   User   @relation("ClientCreatedBy", fields: [managerId], references: [id])
+
+  name      String
+  statement String?
+  website   String?
+  price     Decimal?
+  date      DateTime
+  notes     String?
+
+  // Admin-managed lookups stored as strings until the lookup tables ship.
+  contractType   String? @map("contract_type")
+  taxType        String? @map("tax_type")
+  contractStatus String? @map("contract_status")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([managerId])
+  @@index([name])
+  @@index([date])
+  @@index([contractStatus])
+  @@index([deletedAt])
+  @@map("clients")
+}
+
+// ============================================
+// CAR CASES — FRD §3.8 + §4.10
+// ============================================
+
+/// Vehicle assignment + condition tracking for supervisors. Each case
+/// links a supervisor to a vehicle (license plate) within an area.
+///
+/// Admin-managed lookups (Area, License Plate, Vehicle Condition) are
+/// stored as strings for Phase D.2 — same approach as Client. A later
+/// migration will convert them to FKs once the admin module ships
+/// the lookup tables.
+model CarCase {
+  id String @id @default(cuid())
+
+  /// Manager who created the record.
+  managerId String @map("manager_id")
+  manager   User   @relation("CarCaseCreatedBy", fields: [managerId], references: [id])
+
+  /// Supervisor the vehicle is assigned to (FRD §3.8.2 "Supervisor Name (selectable)").
+  supervisorId String @map("supervisor_id")
+  supervisor   User   @relation("CarCaseSupervisor", fields: [supervisorId], references: [id])
+
+  // Admin-managed lookups stored as strings until the lookup tables ship.
+  area             String  @map("area")
+  licensePlate     String  @map("license_plate")
+  vehicleCondition String  @map("vehicle_condition")
+  oilChangeDate    DateTime? @map("oil_change_date")
+  notes            String?
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([managerId])
+  @@index([supervisorId])
+  @@index([area])
+  @@index([licensePlate])
+  @@index([deletedAt])
+  @@map("car_cases")
+}
+
+// ============================================
+// REPRESENTATIVES — FRD §3.10 + §4.11
+// ============================================
+
+/// Service agreement with a client. The price is computed by the
+/// server from `hourlyRate × numberOfWorkers × numberOfHours` and
+/// persisted alongside the inputs so the row is traceable even if
+/// the hourly rate later changes.
+///
+/// FRD §3.10 references a `serviceType` admin-managed lookup that
+/// owns the canonical hourly rate. For Phase D.3 we accept the rate
+/// directly in the create / update body so managers can record
+/// agreements without waiting for the admin module. When that module
+/// ships, we'll add a `serviceTypeId` FK and lift the rate out of the
+/// payload — the API contract stays additive.
+model Representative {
+  id String @id @default(cuid())
+
+  /// Manager who created the agreement.
+  managerId String @map("manager_id")
+  manager   User   @relation("RepresentativeCreatedBy", fields: [managerId], references: [id])
+
+  clientName  String  @map("client_name")
+  serviceType String  @map("service_type")
+
+  /// Inputs to the price formula. We keep all three even after computing
+  /// `price` so anyone reading the row knows where the number came from.
+  hourlyRate      Decimal @map("hourly_rate")
+  numberOfWorkers Int     @map("number_of_workers")
+  numberOfHours   Decimal @map("number_of_hours")
+
+  /// Computed: hourlyRate * numberOfWorkers * numberOfHours.
+  /// Stored (not a view) so historical reports don't drift if the
+  /// underlying rate is edited later.
+  price Decimal
+
+  dateOfAgreement     DateTime @map("date_of_agreement")
+  customerPhoneNumber String?  @map("customer_phone_number")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([managerId])
+  @@index([clientName])
+  @@index([dateOfAgreement])
+  @@index([deletedAt])
+  @@map("representatives")
+}
+
+// ============================================
 // COMPANIES & BRANCHES — Phase 3
 // ============================================
 
@@ -406,21 +654,21 @@ model Category {
 model Branch {
   id String @id @default(cuid())
 
-  companyId  String  @map("company_id")
-  company    Company @relation(fields: [companyId], references: [id])
-  categoryId String? @map("category_id")
+  companyId  String    @map("company_id")
+  company    Company   @relation(fields: [companyId], references: [id])
+  categoryId String?   @map("category_id")
   category   Category? @relation(fields: [categoryId], references: [id])
-  regionId   String  @map("region_id")
-  region     Region  @relation(fields: [regionId], references: [id])
-  cityId     String  @map("city_id")
-  city       City    @relation(fields: [cityId], references: [id])
+  regionId   String    @map("region_id")
+  region     Region    @relation(fields: [regionId], references: [id])
+  cityId     String    @map("city_id")
+  city       City      @relation(fields: [cityId], references: [id])
 
-  nameAr       String  @map("name_ar")
-  nameEn       String? @map("name_en")
-  branchNumber String? @map("branch_number")
+  nameAr       String   @map("name_ar")
+  nameEn       String?  @map("name_en")
+  branchNumber String?  @map("branch_number")
   code         String?
-  addressAr    String? @map("address_ar")
-  addressEn    String? @map("address_en")
+  addressAr    String?  @map("address_ar")
+  addressEn    String?  @map("address_en")
   latitude     Decimal?
   longitude    Decimal?
 
@@ -447,13 +695,13 @@ model Branch {
 /// Tasks the supervisor must complete during a visit of a given visit type
 /// at a specific branch. (V1 of branch X has a different list than V2.)
 model BranchRequiredTask {
-  id        String @id @default(cuid())
-  branchId  String @map("branch_id")
-  branch    Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  visitType Int    @map("visit_type") // 1=V1, 2=V2, 3=V3, 4=V4
-  titleAr   String @map("title_ar")
+  id        String  @id @default(cuid())
+  branchId  String  @map("branch_id")
+  branch    Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  visitType Int     @map("visit_type") // 1=V1, 2=V2, 3=V3, 4=V4
+  titleAr   String  @map("title_ar")
   titleEn   String? @map("title_en")
-  sortOrder Int    @default(0) @map("sort_order")
+  sortOrder Int     @default(0) @map("sort_order")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -474,11 +722,11 @@ model BranchRequiredTask {
 /// schedule of branch visits for that month. Drafts have publishedAt
 /// = NULL; once the admin "publishes", supervisors can see the schedule.
 model MonthlySchedule {
-  id           String @id @default(cuid())
-  supervisorId String @map("supervisor_id")
-  supervisor   User   @relation(fields: [supervisorId], references: [id])
+  id           String    @id @default(cuid())
+  supervisorId String    @map("supervisor_id")
+  supervisor   User      @relation(fields: [supervisorId], references: [id])
   year         Int
-  month        Int     // 1..12
+  month        Int // 1..12
   publishedAt  DateTime? @map("published_at")
 
   scheduledVisits ScheduledVisit[]
@@ -575,7 +823,7 @@ model VisitInstance {
 
   /// Branch-manager-provided documentation fields.
   jobNumber    String?   @map("job_number")
-  rating       Int?      // 1..5, validated at service layer
+  rating       Int? // 1..5, validated at service layer
   comments     String?
   documentedAt DateTime? @map("documented_at")
 

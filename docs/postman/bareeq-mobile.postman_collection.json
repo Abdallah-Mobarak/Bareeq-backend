@@ -13,7 +13,7 @@
       "name": "00 — Auth",
       "item": [
         {
-          "name": "POST /auth/login (supervisor — mobile)",
+          "name": "POST /auth/mobile/login (supervisor)",
           "event": [
             {
               "listen": "test",
@@ -36,23 +36,23 @@
             "auth": { "type": "noauth" },
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "url": { "raw": "{{baseUrl}}/auth/mobile/login", "host": ["{{baseUrl}}"], "path": ["auth", "mobile", "login"] },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"identifier\": \"{{supervisorEmail}}\",\n  \"password\": \"{{supervisorPassword}}\",\n  \"clientType\": \"mobile\"\n}"
+              "raw": "{\n  \"identifier\": \"{{supervisorEmail}}\",\n  \"password\": \"{{supervisorPassword}}\"\n}"
             }
           }
         },
         {
-          "name": "POST /auth/login (supervisor — web, MUST FAIL 403)",
+          "name": "POST /auth/web/login (supervisor — MUST FAIL 403, mobile-only)",
           "request": {
             "auth": { "type": "noauth" },
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "url": { "raw": "{{baseUrl}}/auth/web/login", "host": ["{{baseUrl}}"], "path": ["auth", "web", "login"] },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"identifier\": \"{{supervisorEmail}}\",\n  \"password\": \"{{supervisorPassword}}\",\n  \"clientType\": \"web\"\n}"
+              "raw": "{\n  \"identifier\": \"{{supervisorEmail}}\",\n  \"password\": \"{{supervisorPassword}}\"\n}"
             }
           }
         },
@@ -458,6 +458,168 @@
               ]
             },
             "description": "Cap is 4 photos per visit — 5th is rejected at the multer layer or at the cumulative-count check."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "06 — My Additional Tasks (FRD §1.4)",
+      "description": "Supervisor read + state transitions for manager-assigned additional tasks. Photos / OTP documentation will land in Phase C.3.",
+      "item": [
+        {
+          "name": "GET /supervisor/additional-tasks",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success && j.data?.items?.[0]) {",
+                  "  pm.environment.set('myAdditionalTaskId', j.data.items[0].id);",
+                  "  console.log('✅ stashed myAdditionalTaskId:', j.data.items[0].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/supervisor/additional-tasks",
+              "host": ["{{baseUrl}}"],
+              "path": ["supervisor", "additional-tasks"]
+            },
+            "description": "FRD §1.4.1. Paginated list of additional tasks assigned to the calling supervisor. Default sort: visitDate ASC (do the soonest first)."
+          }
+        },
+        {
+          "name": "GET /supervisor/additional-tasks (search/filter — FRD §1.4.2/3)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/supervisor/additional-tasks?companyName=Carrefour&status=REMAINING",
+              "host": ["{{baseUrl}}"],
+              "path": ["supervisor", "additional-tasks"],
+              "query": [
+                { "key": "companyName", "value": "Carrefour" },
+                { "key": "status", "value": "REMAINING" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /supervisor/additional-tasks/:id (FRD §1.4.4)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/supervisor/additional-tasks/{{myAdditionalTaskId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["supervisor", "additional-tasks", "{{myAdditionalTaskId}}"]
+            }
+          }
+        },
+        {
+          "name": "POST /supervisor/additional-tasks/:id/start (REMAINING → UNDERWAY)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/supervisor/additional-tasks/{{myAdditionalTaskId}}/start",
+              "host": ["{{baseUrl}}"],
+              "path": ["supervisor", "additional-tasks", "{{myAdditionalTaskId}}", "start"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": 24.711,\n  \"longitude\": 46.712\n}"
+            },
+            "description": "FRD §1.4.4.1 §2.2 — GPS pair required. We don't persist GPS yet (Phase C.3) but the body is validated so the mobile app sends consistent data from day one."
+          }
+        },
+        {
+          "name": "POST /supervisor/additional-tasks/:id/complete (UNDERWAY → IMPLEMENTED)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/supervisor/additional-tasks/{{myAdditionalTaskId}}/complete",
+              "host": ["{{baseUrl}}"],
+              "path": ["supervisor", "additional-tasks", "{{myAdditionalTaskId}}", "complete"]
+            },
+            "body": { "mode": "raw", "raw": "{}" },
+            "description": "FRD §1.4.4.1 §2.4 — terminal state, locks the task."
+          }
+        },
+        {
+          "name": "POST /supervisor/additional-tasks/:id/final-closed",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/supervisor/additional-tasks/{{myAdditionalTaskId}}/final-closed",
+              "host": ["{{baseUrl}}"],
+              "path": ["supervisor", "additional-tasks", "{{myAdditionalTaskId}}", "final-closed"]
+            },
+            "body": { "mode": "raw", "raw": "{}" },
+            "description": "FRD §1.4.4.1 §2.1 — must be set BEFORE starting the visit. Terminal."
+          }
+        },
+        {
+          "name": "POST /supervisor/additional-tasks/:id/not-implemented (with reason)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/supervisor/additional-tasks/{{myAdditionalTaskId}}/not-implemented",
+              "host": ["{{baseUrl}}"],
+              "path": ["supervisor", "additional-tasks", "{{myAdditionalTaskId}}", "not-implemented"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reasonText\": \"الفرع مغلق مؤقتًا لإعادة التجهيز\"\n}"
+            },
+            "description": "FRD §1.4.4.1 §2.1. Re-running this endpoint on an already-NOT_IMPLEMENTED task updates the reason text (FRD §3.2 immutability exception)."
+          }
+        },
+        {
+          "name": "Re-start after IMPLEMENTED (MUST FAIL 409)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/supervisor/additional-tasks/{{myAdditionalTaskId}}/start",
+              "host": ["{{baseUrl}}"],
+              "path": ["supervisor", "additional-tasks", "{{myAdditionalTaskId}}", "start"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": 24.71,\n  \"longitude\": 46.71\n}"
+            },
+            "description": "Terminal-status immutability — once IMPLEMENTED/FINAL_CLOSED, the task is locked. Must 409."
+          }
+        },
+        {
+          "name": "GET /supervisor/additional-tasks/export.xlsx",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/supervisor/additional-tasks/export.xlsx",
+              "host": ["{{baseUrl}}"],
+              "path": ["supervisor", "additional-tasks", "export.xlsx"]
+            },
+            "description": "FRD §1.4.5 — same filters as the JSON list."
+          }
+        },
+        {
+          "name": "GET /supervisor/additional-tasks/export.pdf",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/supervisor/additional-tasks/export.pdf",
+              "host": ["{{baseUrl}}"],
+              "path": ["supervisor", "additional-tasks", "export.pdf"]
+            }
           }
         }
       ]

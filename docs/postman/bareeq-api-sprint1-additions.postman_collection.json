@@ -13,7 +13,7 @@
       "name": "00 — Login (run first)",
       "item": [
         {
-          "name": "POST /auth/login (admin)",
+          "name": "POST /auth/web/login (admin)",
           "event": [
             {
               "listen": "test",
@@ -34,7 +34,7 @@
             "auth": { "type": "noauth" },
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "url": { "raw": "{{baseUrl}}/auth/web/login", "host": ["{{baseUrl}}"], "path": ["auth", "web", "login"] },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"identifier\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
@@ -440,17 +440,17 @@
           }
         },
         {
-          "name": "POST /auth/login (as AM — should succeed)",
+          "name": "POST /auth/web/login (as AM — should succeed)",
           "request": {
             "auth": { "type": "noauth" },
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "url": { "raw": "{{baseUrl}}/auth/web/login", "host": ["{{baseUrl}}"], "path": ["auth", "web", "login"] },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"identifier\": \"am1@lulu.com\",\n  \"password\": \"Am@12345\"\n}"
             },
-            "description": "Use this AFTER unblocking the AM (set status back to ENABLED). Tests FRD §2 FR-3."
+            "description": "Use this AFTER unblocking the AM (set status back to ENABLED). Tests FRD §2 FR-3. AM is web-only (FRD-literal — §2 AM section does not mention mobile)."
           }
         },
         {
@@ -796,7 +796,7 @@
           }
         },
         {
-          "name": "POST /auth/login (as MANAGER — saves managerToken)",
+          "name": "POST /auth/web/login (as MANAGER — saves managerToken)",
           "event": [
             {
               "listen": "test",
@@ -813,7 +813,7 @@
             "auth": { "type": "noauth" },
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "url": { "raw": "{{baseUrl}}/auth/web/login", "host": ["{{baseUrl}}"], "path": ["auth", "web", "login"] },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"identifier\": \"mgr.tasks@test.com\",\n  \"password\": \"Mgr@12345\"\n}"
@@ -861,6 +861,122 @@
               "host": ["{{baseUrl}}"],
               "path": ["manager-tasks", "{{managerTaskId}}"]
             }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "15 — Admin Contact Messages (FRD §4.12)",
+      "description": "Closes the Contact-Us loop opened by /company/contact. Admins list pending messages, reply, and the user pulls the reply via /company/contact/my-messages.",
+      "item": [
+        {
+          "name": "GET /admin/contact-messages",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success && j.data?.items?.[0]) {",
+                  "  pm.environment.set('contactMessageId', j.data.items[0].id);",
+                  "  console.log('✅ stashed contactMessageId');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/contact-messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "contact-messages"]
+            },
+            "description": "FRD §4.12.1 — list all messages, newest first. Each row carries sender info (id, role, name, company) and the reply state."
+          }
+        },
+        {
+          "name": "GET /admin/contact-messages?status=PENDING",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/contact-messages?status=PENDING",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "contact-messages"],
+              "query": [{ "key": "status", "value": "PENDING" }]
+            },
+            "description": "Filter to just the unanswered queue. status options: PENDING | REPLIED."
+          }
+        },
+        {
+          "name": "GET /admin/contact-messages?userRole=COMPANY_USER",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/contact-messages?userRole=COMPANY_USER",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "contact-messages"],
+              "query": [{ "key": "userRole", "value": "COMPANY_USER" }]
+            },
+            "description": "Filter by sender role: COMPANY_USER | ACCOUNTANT_MANAGER."
+          }
+        },
+        {
+          "name": "GET /admin/contact-messages/:id",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/contact-messages/{{contactMessageId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "contact-messages", "{{contactMessageId}}"]
+            }
+          }
+        },
+        {
+          "name": "POST /admin/contact-messages/:id/reply (FRD §4.12.2)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/admin/contact-messages/{{contactMessageId}}/reply",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "contact-messages", "{{contactMessageId}}", "reply"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reply\": \"شكراً لتواصلكم. سنقوم بمراجعة جدول الزيارات وإبلاغكم بأي تحديثات.\"\n}"
+            },
+            "description": "Stamps reply + repliedAt + repliedByAdminId. Status flips to REPLIED. Re-replying on the same message is allowed (the admin can correct/extend their response)."
+          }
+        },
+        {
+          "name": "Verify from company side — GET /company/contact/my-messages",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{companyToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/company/contact/my-messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["company", "contact", "my-messages"]
+            },
+            "description": "End-to-end loop closed: the company sees the admin's reply inline (reply, repliedAt) and status flips to REPLIED."
+          }
+        },
+        {
+          "name": "DELETE /admin/contact-messages/:id (soft)",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/admin/contact-messages/{{contactMessageId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "contact-messages", "{{contactMessageId}}"]
+            },
+            "description": "Soft delete — useful for clearing spam. Row stays in DB with deletedAt set."
           }
         }
       ]

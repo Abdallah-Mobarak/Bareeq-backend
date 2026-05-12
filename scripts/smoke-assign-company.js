@@ -35,7 +35,7 @@ const log = (label, result) => {
 
 const main = async () => {
   // 1. login
-  let r = await j('POST', '/auth/login', {
+  let r = await j('POST', '/auth/web/login', {
     identifier: 'admin@bareeq.local',
     password: 'Admin@12345',
   });

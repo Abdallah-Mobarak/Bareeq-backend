@@ -73,30 +73,40 @@ const login = async ({ identifier, password: plainPassword, deviceInfo, clientTy
   }
 
   /**
-   * Mobile-only / web-only enforcement (FRD §1.1 — Supervisor mobile app).
+   * Per-role surface policy — read straight from the FRD:
    *
-   *   SUPERVISOR  → mobile only. The dashboard never has a use case for them.
-   *   ADMIN       → web only. They manage the platform from the dashboard.
-   *   MANAGER     → web only.
-   *   COMPANY_USER, ACCOUNTANT_MANAGER → currently web only.
+   *   SUPERVISOR        → mobile only       (FRD §1   "Supervisor Functionality Mobile Application")
+   *   COMPANY_USER      → web AND mobile    (FRD §2   "Companies' Functionality Mobile and Web Application")
+   *   ACCOUNTANT_MANAGER→ web only          (FRD §2 (AM) — no mobile mentioned, default to web)
+   *   MANAGER           → web only          (FRD §3   "Web Application Functionality for Managers")
+   *   ADMIN             → web only          (FRD §4   "Web Application Functionality for Admins")
    *
-   * If we add roles that span both surfaces later, we extend this map.
-   * Generic "Invalid credentials" message — don't leak whether the role
-   * exists; just say "you can't log in here".
+   * Each value is an array of allowed surfaces so a role can span both
+   * (e.g. COMPANY_USER). When the FRD adds a new surface for a role we
+   * append to that role's array — no other code changes.
    */
   const ROLE_CLIENT_MAP = {
-    SUPERVISOR: 'mobile',
-    ADMIN: 'web',
-    MANAGER: 'web',
-    COMPANY_USER: 'web',
-    ACCOUNTANT_MANAGER: 'web',
+    SUPERVISOR: ['mobile'],
+    ADMIN: ['web'],
+    MANAGER: ['web'],
+    COMPANY_USER: ['web', 'mobile'],
+    ACCOUNTANT_MANAGER: ['web'],
   };
-  const expectedClient = ROLE_CLIENT_MAP[user.role];
-  if (expectedClient && clientType !== expectedClient) {
+  const allowedClients = ROLE_CLIENT_MAP[user.role];
+  if (allowedClients && !allowedClients.includes(clientType)) {
+    /**
+     * If the role is locked to a single surface we can give a precise
+     * hint ("use the mobile app"). For multi-surface roles that's not
+     * meaningful, so we fall back to a generic message. We never leak
+     * the role name — that would help an attacker enumerate accounts.
+     */
+    const onlySurface = allowedClients.length === 1 ? allowedClients[0] : null;
     throw ApiError.forbidden(
-      expectedClient === 'mobile'
+      onlySurface === 'mobile'
         ? 'This account can only log in from the mobile application'
-        : 'This account can only log in from the dashboard',
+        : onlySurface === 'web'
+          ? 'This account can only log in from the dashboard'
+          : 'This account is not allowed to log in from this surface',
     );
   }
 

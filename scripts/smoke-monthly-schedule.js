@@ -29,7 +29,7 @@ const stamp = Date.now();
 
 const main = async () => {
   // Login
-  const login = await j('POST', '/auth/login', {
+  const login = await j('POST', '/auth/web/login', {
     identifier: 'admin@bareeq.local',
     password: 'Admin@12345',
   });
