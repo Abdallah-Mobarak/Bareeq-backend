@@ -6,6 +6,7 @@ const { sendEmail } = require('../../utils/mailer');
 const { logger } = require('../../utils/logger');
 const { config } = require('../../config/env');
 const authService = require('../auth/auth.service');
+const { notify } = require('../notifications/notifications.service');
 
 /**
  * Service Provider self-signup + password reset (Marketplace §2.1).
@@ -97,7 +98,7 @@ const verifySignup = async ({
 
   const passwordHash = await password.hash(plainPassword);
 
-  await prisma.$transaction(async (tx) => {
+  const newUserId = await prisma.$transaction(async (tx) => {
     const user = await tx.user.create({
       data: {
         email,
@@ -117,6 +118,17 @@ const verifySignup = async ({
         // later via a separate KYC submission flow (Sprint 4).
       },
     });
+
+    return user.id;
+  });
+
+  await notify({
+    userId: newUserId,
+    type: 'SERVICE_PROVIDER_WELCOME',
+    titleAr: 'أهلاً بك في بريق',
+    titleEn: 'Welcome to Bareeq',
+    bodyAr: `مرحباً ${nameAr}، حسابك جاهز. أكمل ملفك وارفع مستنداتك لبدء استلام الحجوزات.`,
+    bodyEn: `Hi ${nameEn || nameAr}, your account is ready. Complete your profile and submit KYC to start receiving bookings.`,
   });
 
   logger.info({ email }, 'Service provider account created');

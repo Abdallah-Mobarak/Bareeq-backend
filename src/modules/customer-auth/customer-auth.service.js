@@ -6,6 +6,7 @@ const { sendEmail } = require('../../utils/mailer');
 const { logger } = require('../../utils/logger');
 const { config } = require('../../config/env');
 const authService = require('../auth/auth.service');
+const { notify } = require('../notifications/notifications.service');
 
 /**
  * In non-production we surface the OTP in the response so developers can
@@ -129,7 +130,7 @@ const verifySignup = async ({
 
   const passwordHash = await password.hash(plainPassword);
 
-  await prisma.$transaction(async (tx) => {
+  const newUserId = await prisma.$transaction(async (tx) => {
     const user = await tx.user.create({
       data: {
         email,
@@ -144,6 +145,18 @@ const verifySignup = async ({
     await tx.customer.create({
       data: { userId: user.id },
     });
+
+    return user.id;
+  });
+
+  // Fire-and-forget welcome notification (errors swallowed by notify()).
+  await notify({
+    userId: newUserId,
+    type: 'CUSTOMER_WELCOME',
+    titleAr: 'أهلاً بك في بريق',
+    titleEn: 'Welcome to Bareeq',
+    bodyAr: `مرحباً ${nameAr}، حسابك جاهز. ابدأ تصفّح الخدمات!`,
+    bodyEn: `Hi ${nameEn || nameAr}, your account is ready. Start exploring services!`,
   });
 
   logger.info({ email }, 'Customer account created');

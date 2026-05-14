@@ -1,6 +1,7 @@
 const { prisma } = require('../../infrastructure/database/prisma');
 const { ApiError } = require('../../utils/ApiError');
 const { logger } = require('../../utils/logger');
+const { notify } = require('../notifications/notifications.service');
 
 /**
  * Admin Service Provider management (FRD §3.2.2 + §2.1).
@@ -194,6 +195,22 @@ const reviewKyc = async (id, { decision, notes }) => {
     },
     'Admin reviewed SP KYC',
   );
+
+  // Tell the SP — different copy depending on decision. `data.notes`
+  // carries the admin's reason so the client can render it.
+  await notify({
+    userId: id,
+    type: isApprove ? 'KYC_APPROVED' : 'KYC_REJECTED',
+    titleAr: isApprove ? 'تم التحقق من حسابك' : 'مراجعة المستندات',
+    titleEn: isApprove ? 'Your account is verified' : 'KYC needs attention',
+    bodyAr: isApprove
+      ? 'تمت الموافقة على مستنداتك. تقدر تستلم حجوزات دلوقتي.'
+      : `لم تتم الموافقة على مستنداتك${notes ? `: ${notes}` : ''}. يرجى مراجعتها وإعادة الإرسال.`,
+    bodyEn: isApprove
+      ? 'Your documents have been approved. You can now accept bookings.'
+      : `Your KYC was not approved${notes ? `: ${notes}` : ''}. Please review and resubmit.`,
+    data: { decision, notes: notes || null },
+  });
 
   return serializeDetail(refetched);
 };

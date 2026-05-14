@@ -1,6 +1,7 @@
 const { prisma } = require('../../infrastructure/database/prisma');
 const { ApiError } = require('../../utils/ApiError');
 const { logger } = require('../../utils/logger');
+const { notify } = require('../notifications/notifications.service');
 
 /**
  * Service Provider booking flow — FRD §2.2 + §2.3.
@@ -57,9 +58,7 @@ const serialize = (b) => ({
   totalCost: money(b.totalCost),
   commissionRate: b.commissionRate ? b.commissionRate.toString() : null,
   commissionAmount: money(b.commissionAmount),
-  spPayout: b.commissionAmount
-    ? money(Number(b.totalCost) - Number(b.commissionAmount))
-    : null,
+  spPayout: b.commissionAmount ? money(Number(b.totalCost) - Number(b.commissionAmount)) : null,
   status: b.status,
   paymentMethod: b.paymentMethod,
   paymentStatus: b.paymentStatus,
@@ -180,6 +179,18 @@ const acceptBooking = async (spUserId, bookingId) => {
   });
 
   logger.info({ bookingId, spUserId }, 'Booking accepted (PENDING → APPROVED)');
+
+  // Tell the customer that an SP took their request.
+  await notify({
+    userId: result.customerId,
+    type: 'BOOKING_ACCEPTED',
+    titleAr: 'تم قبول طلبك',
+    titleEn: 'Your booking has been accepted',
+    bodyAr: `قَبِل مزود الخدمة طلب "${result.service.titleAr}". انتظر بدء التنفيذ.`,
+    bodyEn: `A provider accepted your "${result.service.titleEn || result.service.titleAr}" request.`,
+    data: { bookingId, serviceId: result.serviceId },
+  });
+
   return serialize(result);
 };
 
@@ -255,6 +266,17 @@ const startBooking = async (spUserId, bookingId) => {
     },
   });
   logger.info({ bookingId, spUserId }, 'Booking started (APPROVED → IN_PROGRESS)');
+
+  await notify({
+    userId: updated.customerId,
+    type: 'BOOKING_STARTED',
+    titleAr: 'بدأ تنفيذ طلبك',
+    titleEn: 'Your booking has started',
+    bodyAr: `بدأ المزود تنفيذ "${updated.service.titleAr}".`,
+    bodyEn: `Work has started on "${updated.service.titleEn || updated.service.titleAr}".`,
+    data: { bookingId, serviceId: updated.serviceId },
+  });
+
   return serialize(updated);
 };
 
@@ -288,6 +310,18 @@ const completeBooking = async (spUserId, bookingId) => {
     { bookingId, spUserId, paymentStatus: updated.paymentStatus },
     'Booking completed (IN_PROGRESS → COMPLETED)',
   );
+
+  // Prompt the customer to leave a review — closes the booking loop.
+  await notify({
+    userId: updated.customerId,
+    type: 'BOOKING_COMPLETED',
+    titleAr: 'تم إنجاز الخدمة',
+    titleEn: 'Service completed',
+    bodyAr: `تم إنجاز "${updated.service.titleAr}". قيّم تجربتك من فضلك.`,
+    bodyEn: `"${updated.service.titleEn || updated.service.titleAr}" is complete. Please rate your experience.`,
+    data: { bookingId, serviceId: updated.serviceId },
+  });
+
   return serialize(updated);
 };
 

@@ -16,6 +16,7 @@ const adminBookingsRoutes = require('../modules/admin-bookings/admin-bookings.ro
 const customerReviewsRoutes = require('../modules/customer-reviews/customer-reviews.routes');
 const serviceProviderReviewsRoutes = require('../modules/service-provider-reviews/service-provider-reviews.routes');
 const adminReviewsRoutes = require('../modules/admin-reviews/admin-reviews.routes');
+const notificationsRoutes = require('../modules/notifications/notifications.routes');
 const permissionsRoutes = require('../modules/permissions/permissions.routes');
 const permissionRolesRoutes = require('../modules/permission-roles/permission-roles.routes');
 const managersRoutes = require('../modules/managers/managers.routes');
@@ -72,6 +73,7 @@ router.use('/admin/bookings', adminBookingsRoutes);
 router.use('/customer/bookings/:id/review', customerReviewsRoutes);
 router.use('/service-provider/reviews', serviceProviderReviewsRoutes);
 router.use('/admin/reviews', adminReviewsRoutes);
+router.use('/notifications', notificationsRoutes);
 router.use('/permissions', permissionsRoutes);
 router.use('/permission-roles', permissionRolesRoutes);
 router.use('/managers', managersRoutes);

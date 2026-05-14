@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Bareeq Marketplace (Sprint 3)",
-    "description": "Marketplace endpoints — Sprint 3 + Sprint 4 bookings.\n\nUsage:\n1. Import this collection AND the matching `bareeq-api.postman_environment.json` environment file.\n2. Select the 'Bareeq Local' environment in the top-right.\n3. Run the folders top-to-bottom (or use the Runner on the whole collection).\n   - Each Create endpoint auto-captures its ID + tokens into env variables.\n   - Customer + SP signup capture the dev-mode OTP into env automatically.\n\nFolder layout:\n  00 — Admin Login                captures adminAccessToken\n  01 — Customer Auth              signup → verify (auto-login) → password reset\n  02 — Service Provider Auth      same shape as Customer Auth\n  03 — Admin Service Categories   CRUD (requires admin token from folder 00)\n  04 — Admin Services             CRUD + commission + nested subcategories\n  05 — Customer Home              browse / filter / search / detail\n  06 — Customer Profile           GET / PATCH / change-password\n  07 — Service Provider Profile   GET / PATCH / change-password\n  08 — Admin Customers            list / detail / block-unblock\n  09 — Admin Service Providers    list / detail / block-unblock / KYC review\n  10 — Customer Bookings          create / list / detail / cancel\n  11 — SP Bookings                pool / accept / list / start / complete\n  12 — Admin Bookings             list / detail (read-only oversight)\n  13 — Customer Reviews           submit + get own (under /customer/bookings/:id/review)\n  14 — SP Reviews                 list reviews received on my work\n  15 — Admin Reviews              list + detail oversight\n\nFRD references: Service Management §1.1–§1.3, §2.1–§2.3, §3.2–§3.4.",
+    "description": "Marketplace endpoints — Sprint 3 + Sprint 4 bookings.\n\nUsage:\n1. Import this collection AND the matching `bareeq-api.postman_environment.json` environment file.\n2. Select the 'Bareeq Local' environment in the top-right.\n3. Run the folders top-to-bottom (or use the Runner on the whole collection).\n   - Each Create endpoint auto-captures its ID + tokens into env variables.\n   - Customer + SP signup capture the dev-mode OTP into env automatically.\n\nFolder layout:\n  00 — Admin Login                captures adminAccessToken\n  01 — Customer Auth              signup → verify (auto-login) → password reset\n  02 — Service Provider Auth      same shape as Customer Auth\n  03 — Admin Service Categories   CRUD (requires admin token from folder 00)\n  04 — Admin Services             CRUD + commission + nested subcategories\n  05 — Customer Home              browse / filter / search / detail\n  06 — Customer Profile           GET / PATCH / change-password\n  07 — Service Provider Profile   GET / PATCH / change-password\n  08 — Admin Customers            list / detail / block-unblock\n  09 — Admin Service Providers    list / detail / block-unblock / KYC review\n  10 — Customer Bookings          create / list / detail / cancel\n  11 — SP Bookings                pool / accept / list / start / complete\n  12 — Admin Bookings             list / detail (read-only oversight)\n  13 — Customer Reviews           submit + get own (under /customer/bookings/:id/review)\n  14 — SP Reviews                 list reviews received on my work\n  15 — Admin Reviews              list + detail oversight\n  16 — Notifications              list / unread-count / mark-read / mark-all-read\n\nFRD references: Service Management §1.1–§1.3, §2.1–§2.3, §3.2–§3.4, §1.4 / §2.4 / §3.13 (notifications).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -1176,6 +1176,83 @@
               "host": ["{{baseUrl}}"],
               "path": ["admin", "reviews", "{{reviewId}}"]
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "16 — Notifications (FRD §1.4 / §2.4 / §3.13)",
+      "item": [
+        {
+          "name": "GET /notifications (list mine)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success && res.items && res.items[0]) {",
+                  "  pm.environment.set('notificationId', res.items[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/notifications?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "unread", "value": "true", "disabled": true, "description": "true → only unread, false → only read, omit → all" },
+                { "key": "type", "value": "BOOKING_ACCEPTED", "disabled": true, "description": "filter by type" }
+              ]
+            },
+            "description": "List notifications for the authenticated user. Works for any role — CUSTOMER, SERVICE_PROVIDER, MANAGER, ADMIN, SUPERVISOR. Captures the first id into env for use by the mark-read endpoint."
+          }
+        },
+        {
+          "name": "GET /notifications/unread-count (bell badge)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/unread-count",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", "unread-count"]
+            },
+            "description": "Fast count for the bell icon badge. O(1) DB query."
+          }
+        },
+        {
+          "name": "PATCH /notifications/:id/read",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/{{notificationId}}/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", "{{notificationId}}", "read"]
+            },
+            "description": "Mark one notification as read. Idempotent — calling on an already-read row succeeds. Marking someone else's notification returns 404 (object-capability)."
+          }
+        },
+        {
+          "name": "PATCH /notifications/read-all",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/read-all",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", "read-all"]
+            },
+            "description": "Mark every unread notification for the caller as read. Returns { markedRead: N }."
           }
         }
       ]

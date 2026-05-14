@@ -1,6 +1,7 @@
 const { prisma } = require('../../infrastructure/database/prisma');
 const { ApiError } = require('../../utils/ApiError');
 const { logger } = require('../../utils/logger');
+const { notify } = require('../notifications/notifications.service');
 
 /**
  * Customer-side review flow — FRD §1.2.1 / §1.2.2.
@@ -124,6 +125,20 @@ const submitReview = async (customerId, bookingId, { rating, comment }) => {
     { reviewId: review.id, bookingId, customerId, rating },
     'Customer review submitted; aggregates recomputed',
   );
+
+  // Tell the SP they received a review. We deliberately don't include
+  // the comment in the body — keep the notification short; the client
+  // opens the SP-reviews screen via data.reviewId.
+  await notify({
+    userId: booking.assignedSpId,
+    type: 'REVIEW_RECEIVED',
+    titleAr: 'تقييم جديد',
+    titleEn: 'New review',
+    bodyAr: `حصلت على تقييم ${rating} نجوم على إحدى خدماتك.`,
+    bodyEn: `You received a ${rating}-star review on one of your services.`,
+    data: { reviewId: review.id, bookingId, rating },
+  });
+
   return serialize(review);
 };
 
