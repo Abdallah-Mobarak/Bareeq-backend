@@ -1,0 +1,592 @@
+{
+  "info": {
+    "name": "Bareeq Marketplace (Sprint 3)",
+    "description": "Sprint 3 marketplace endpoints — Customer & Service Provider auth, admin catalog management, and Customer Home browse/filter/search.\n\nUsage:\n1. Import this collection AND the matching `bareeq-api.postman_environment.json` environment file.\n2. Select the 'Bareeq Local' environment in the top-right.\n3. Run the folders top-to-bottom (or use the Runner on the whole collection).\n   - Each Create endpoint auto-captures its ID + tokens into env variables.\n   - Customer + SP signup capture the dev-mode OTP into env automatically.\n\nFolder layout:\n  01 — Customer Auth        signup → verify (auto-login) → password reset\n  02 — Service Provider Auth  same shape as Customer Auth\n  03 — Admin Service Categories  CRUD (requires admin token from main collection)\n  04 — Admin Services           CRUD + commission management + nested subcategories\n  05 — Customer Home            browse / filter / search / detail (uses CUSTOMER token)\n\nFRD references: Service Management §1.1, §1.2, §2.1, §3.4.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "00 — Admin Login (for admin folders)",
+      "item": [
+        {
+          "name": "POST /auth/web/login (admin) — captures adminAccessToken",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success && res.data) {",
+                  "  pm.environment.set('adminAccessToken', res.data.accessToken);",
+                  "  console.log('Admin token saved.');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/auth/web/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "web", "login"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 — Customer Auth (FRD §1.1)",
+      "item": [
+        {
+          "name": "POST /auth/customer/signup — captures customerSignupOtp",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success && res.data && res.data.otp) {",
+                  "  pm.environment.set('customerSignupOtp', res.data.otp);",
+                  "  console.log('Customer signup OTP captured (dev mode only):', res.data.otp);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/auth/customer/signup",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "customer", "signup"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\",\n  \"nameAr\": \"عميل اختبار\",\n  \"nameEn\": \"Test Customer\",\n  \"phone\": \"+966501112222\"\n}"
+            },
+            "description": "Step 1 of signup. Validates the email isn't already registered (any role) and issues an email OTP. The User row is NOT created yet.\n\nIn dev (NODE_ENV != production) the response includes the plaintext OTP for testing."
+          }
+        },
+        {
+          "name": "POST /auth/customer/signup/verify — captures customerAccessToken",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success && res.data && res.data.accessToken) {",
+                  "  pm.environment.set('customerAccessToken', res.data.accessToken);",
+                  "  pm.environment.set('customerRefreshToken', res.data.refreshToken);",
+                  "  pm.environment.set('customerId', res.data.user.id);",
+                  "  console.log('Customer logged in.');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/auth/customer/signup/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "customer", "signup", "verify"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\",\n  \"nameAr\": \"عميل اختبار\",\n  \"nameEn\": \"Test Customer\",\n  \"phone\": \"+966501112222\",\n  \"otp\": \"{{customerSignupOtp}}\"\n}"
+            },
+            "description": "Step 2: verifies the OTP and atomically creates the User + Customer satellite. On success auto-logs in and returns access + refresh tokens (response matches /auth/mobile/login)."
+          }
+        },
+        {
+          "name": "POST /auth/customer/password-reset/request — captures customerResetOtp",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success && res.data && res.data.otp) {",
+                  "  pm.environment.set('customerResetOtp', res.data.otp);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/auth/customer/password-reset/request",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "customer", "password-reset", "request"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{customerEmail}}\"\n}"
+            },
+            "description": "Anti-enumeration: response shape is the same whether or not the email exists in production. In dev, the OTP only appears when the email is real — that's how we capture it here."
+          }
+        },
+        {
+          "name": "POST /auth/customer/password-reset/confirm",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/auth/customer/password-reset/confirm",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "customer", "password-reset", "confirm"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"otp\": \"{{customerResetOtp}}\",\n  \"newPassword\": \"newpass123\"\n}"
+            },
+            "description": "Verifies the reset OTP, hashes the new password, and revokes every active refresh token for the account so any compromised device is logged out."
+          }
+        },
+        {
+          "name": "POST /auth/mobile/login (as customer) — captures customerAccessToken",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success && res.data && res.data.accessToken) {",
+                  "  pm.environment.set('customerAccessToken', res.data.accessToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/auth/mobile/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "mobile", "login"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\"\n}"
+            },
+            "description": "Customers log in via the SAME mobile-login endpoint as supervisors. The role on the User row controls the experience. ROLE_CLIENT_MAP enforces that CUSTOMER cannot log in from the web surface."
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 — Service Provider Auth (FRD §2.1)",
+      "item": [
+        {
+          "name": "POST /auth/service-provider/signup — captures spSignupOtp",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success && res.data && res.data.otp) {",
+                  "  pm.environment.set('spSignupOtp', res.data.otp);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/auth/service-provider/signup",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "service-provider", "signup"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{spEmail}}\",\n  \"password\": \"{{spPassword}}\",\n  \"nameAr\": \"مزود خدمة\",\n  \"nameEn\": \"Test SP\",\n  \"phone\": \"+966503334444\",\n  \"bio\": \"كهربائي بخبرة 10 سنوات\"\n}"
+            },
+            "description": "Same flow as Customer signup. `bio` is the only SP-only field; it's optional and can be set later via profile-update endpoints."
+          }
+        },
+        {
+          "name": "POST /auth/service-provider/signup/verify — captures spAccessToken",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success && res.data && res.data.accessToken) {",
+                  "  pm.environment.set('spAccessToken', res.data.accessToken);",
+                  "  pm.environment.set('spId', res.data.user.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/auth/service-provider/signup/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "service-provider", "signup", "verify"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{spEmail}}\",\n  \"password\": \"{{spPassword}}\",\n  \"nameAr\": \"مزود خدمة\",\n  \"nameEn\": \"Test SP\",\n  \"phone\": \"+966503334444\",\n  \"bio\": \"كهربائي بخبرة 10 سنوات\",\n  \"otp\": \"{{spSignupOtp}}\"\n}"
+            },
+            "description": "Creates User (role=SERVICE_PROVIDER) + ServiceProvider satellite (with bio, kycStatus=NOT_SUBMITTED default). Auto-login returns mobile tokens."
+          }
+        },
+        {
+          "name": "POST /auth/service-provider/password-reset/request — captures spResetOtp",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success && res.data && res.data.otp) {",
+                  "  pm.environment.set('spResetOtp', res.data.otp);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/auth/service-provider/password-reset/request",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "service-provider", "password-reset", "request"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{spEmail}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST /auth/service-provider/password-reset/confirm",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/auth/service-provider/password-reset/confirm",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "service-provider", "password-reset", "confirm"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{spEmail}}\",\n  \"otp\": \"{{spResetOtp}}\",\n  \"newPassword\": \"newsppass123\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 — Admin Service Categories (FRD §3.4)",
+      "item": [
+        {
+          "name": "POST /admin/service-categories — captures serviceCategoryId",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success && res.data) {",
+                  "  pm.environment.set('serviceCategoryId', res.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/service-categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "service-categories"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"titleAr\": \"خدمات منزلية\",\n  \"titleEn\": \"Home Services\",\n  \"iconUrl\": \"https://example.com/home.png\",\n  \"sortOrder\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /admin/service-categories (list + filters)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/admin/service-categories?page=1&limit=20&sort=sortOrder",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "service-categories"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "q", "value": "", "disabled": true },
+                { "key": "isActive", "value": "true", "disabled": true },
+                { "key": "sort", "value": "sortOrder" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /admin/service-categories/:id",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/admin/service-categories/{{serviceCategoryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "service-categories", "{{serviceCategoryId}}"]
+            }
+          }
+        },
+        {
+          "name": "PATCH /admin/service-categories/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/service-categories/{{serviceCategoryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "service-categories", "{{serviceCategoryId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"titleEn\": \"Home Services (Updated)\",\n  \"sortOrder\": 5\n}"
+            }
+          }
+        },
+        {
+          "name": "DELETE /admin/service-categories/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/admin/service-categories/{{serviceCategoryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "service-categories", "{{serviceCategoryId}}"]
+            },
+            "description": "Blocked with 409 if any active Service still references this category. Move/delete those Services first."
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 — Admin Services (FRD §3.4.1)",
+      "item": [
+        {
+          "name": "POST /admin/services (with subcategories) — captures serviceId",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success && res.data) {",
+                  "  pm.environment.set('serviceId', res.data.id);",
+                  "  console.log('Service created. totalCost =', res.data.totalCost);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/services",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "services"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"categoryId\": \"{{serviceCategoryId}}\",\n  \"titleAr\": \"سباكة\",\n  \"titleEn\": \"Plumbing\",\n  \"descriptionAr\": \"خدمات سباكة منزلية\",\n  \"descriptionEn\": \"Residential plumbing services\",\n  \"imageUrl\": \"https://example.com/plumbing.png\",\n  \"commissionRate\": 10,\n  \"subcategories\": [\n    { \"titleAr\": \"تسليك مجاري\", \"titleEn\": \"Drain cleaning\", \"cost\": 100 },\n    { \"titleAr\": \"إصلاح أنابيب\", \"titleEn\": \"Pipe repair\", \"cost\": 200 },\n    { \"titleAr\": \"تركيب مرحاض\", \"titleEn\": \"Toilet install\", \"cost\": 150 }\n  ]\n}"
+            },
+            "description": "Creates the Service + its subcategories atomically. The response's totalCost is the sum of all subcategory costs (the 'default' service cost the customer sees)."
+          }
+        },
+        {
+          "name": "GET /admin/services (list + filters)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/admin/services?page=1&limit=20&sort=sortOrder",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "services"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "q", "value": "", "disabled": true },
+                { "key": "categoryId", "value": "{{serviceCategoryId}}", "disabled": true },
+                { "key": "isActive", "value": "true", "disabled": true },
+                { "key": "sort", "value": "sortOrder" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /admin/services/:id (with subcategories + totalCost)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/admin/services/{{serviceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "services", "{{serviceId}}"]
+            }
+          }
+        },
+        {
+          "name": "PATCH /admin/services/:id (replace-all subcategories)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/services/{{serviceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "services", "{{serviceId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"titleEn\": \"Plumbing (Updated)\",\n  \"subcategories\": [\n    { \"titleAr\": \"تسليك مجاري\", \"titleEn\": \"Drain cleaning\", \"cost\": 120 },\n    { \"titleAr\": \"إصلاح أنابيب\", \"titleEn\": \"Pipe repair\", \"cost\": 220 },\n    { \"titleAr\": \"تركيب سخان\", \"titleEn\": \"Water heater install\", \"cost\": 300 }\n  ]\n}"
+            },
+            "description": "If `subcategories` is in the body, it REPLACES the existing list (soft-delete old + create new, preserving audit trail). If omitted, subcategories are left untouched."
+          }
+        },
+        {
+          "name": "PATCH /admin/services/:id/commission (FRD §3.4.1.5)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/services/{{serviceId}}/commission",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "services", "{{serviceId}}", "commission"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"commissionRate\": 15.5\n}"
+            }
+          }
+        },
+        {
+          "name": "DELETE /admin/services/:id (cascades to subcategories)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/admin/services/{{serviceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "services", "{{serviceId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 — Customer Home (FRD §1.2)",
+      "item": [
+        {
+          "name": "GET /customer/home/categories",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/customer/home/categories?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["customer", "home", "categories"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "description": "FRD §1.2.3 — returns active categories sorted by sortOrder. Minimal card payload (id, titleAr/En, iconUrl)."
+          }
+        },
+        {
+          "name": "GET /customer/home/services (browse + filter + search)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/customer/home/services?page=1&limit=20&sort=sortOrder",
+              "host": ["{{baseUrl}}"],
+              "path": ["customer", "home", "services"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "q", "value": "", "disabled": true },
+                { "key": "categoryId", "value": "{{serviceCategoryId}}", "disabled": true },
+                { "key": "minRating", "value": "3.5", "disabled": true },
+                { "key": "maxRating", "value": "5", "disabled": true },
+                { "key": "minCost", "value": "100", "disabled": true },
+                { "key": "maxCost", "value": "500", "disabled": true },
+                { "key": "sort", "value": "sortOrder", "description": "sortOrder | rating | newest | priceAsc | priceDesc" }
+              ]
+            },
+            "description": "FRD §1.2.1, §1.2.4, §1.2.5. Cost-range filter (`minCost` / `maxCost`) is applied in-memory after fetch because totalCost = SUM of subcategory costs (not a column). Each card carries totalCost + rating + image."
+          }
+        },
+        {
+          "name": "GET /customer/home/services/:id (detail with subcategories)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/customer/home/services/{{serviceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["customer", "home", "services", "{{serviceId}}"]
+            },
+            "description": "FRD §1.2.2. Returns the full service, every active subcategory (with cost), plus totalCost (sum of all subcategories — the 'default-all-selected' price). The client subtracts costs as the user un-picks subcategories."
+          }
+        }
+      ]
+    }
+  ]
+}
