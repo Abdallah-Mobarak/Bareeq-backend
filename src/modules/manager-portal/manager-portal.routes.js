@@ -3,6 +3,7 @@ const { Router } = require('express');
 const validate = require('../../middlewares/validate');
 const requireAuth = require('../../middlewares/requireAuth');
 const requireRole = require('../../middlewares/requireRole');
+const requirePermission = require('../../middlewares/requirePermission');
 const controller = require('./manager-portal.controller');
 const {
   listTeamsQuerySchema,
@@ -45,8 +46,16 @@ router.use(requireAuth, requireRole('MANAGER', 'ADMIN'));
  */
 router.get('/my-profile', requireRole('MANAGER'), controller.myProfile);
 
+/**
+ * Per-route permission keys come from the FRD §4.2.1.2 catalog
+ * (seeded by scripts/seed-permissions.js). Every endpoint specifies
+ * exactly one key; the bootstrap admin (no permissionRoleId) bypasses
+ * the check, so a fresh-seed environment "just works" without anyone
+ * losing access during the wire-up.
+ */
 router.get(
   '/teams',
+  requirePermission('VIEW_TEAMS'),
   validate(listTeamsQuerySchema, 'query'),
   controller.listTeams,
 );
@@ -58,21 +67,25 @@ router.get(
  */
 router.get(
   '/branches',
+  requirePermission('VIEW_IMPLEMENTED_BRANCHES'),
   validate(listBranchesQuerySchema, 'query'),
   controller.listBranches,
 );
 router.get(
   '/branches/export.xlsx',
+  requirePermission('EXPORT_IMPLEMENTED_BRANCHES'),
   validate(listBranchesQuerySchema, 'query'),
   controller.exportBranchesXlsx,
 );
 router.get(
   '/branches/export.pdf',
+  requirePermission('EXPORT_IMPLEMENTED_BRANCHES'),
   validate(listBranchesQuerySchema, 'query'),
   controller.exportBranchesPdf,
 );
 router.get(
   '/branches/:id',
+  requirePermission('VIEW_IMPLEMENTED_BRANCHES'),
   validate(idParamSchema, 'params'),
   controller.branchDetail,
 );
@@ -83,16 +96,19 @@ router.get(
  */
 router.get(
   '/reports/by-company',
+  requirePermission('VIEW_MONTHLY_REPORTS'),
   validate(reportByCompanyQuerySchema, 'query'),
   controller.reportByCompany,
 );
 router.get(
   '/reports/by-company/export.xlsx',
+  requirePermission('EXPORT_MONTHLY_REPORTS'),
   validate(reportByCompanyQuerySchema, 'query'),
   controller.exportReportByCompanyXlsx,
 );
 router.get(
   '/reports/by-company/export.pdf',
+  requirePermission('EXPORT_MONTHLY_REPORTS'),
   validate(reportByCompanyQuerySchema, 'query'),
   controller.exportReportByCompanyPdf,
 );
@@ -103,16 +119,19 @@ router.get(
  */
 router.get(
   '/customers',
+  requirePermission('VIEW_CUSTOMERS'),
   validate(listCustomersQuerySchema, 'query'),
   controller.listCustomers,
 );
 router.get(
   '/customers/export.xlsx',
+  requirePermission('EXPORT_CUSTOMERS'),
   validate(listCustomersQuerySchema, 'query'),
   controller.exportCustomersXlsx,
 );
 router.get(
   '/customers/export.pdf',
+  requirePermission('EXPORT_CUSTOMERS'),
   validate(listCustomersQuerySchema, 'query'),
   controller.exportCustomersPdf,
 );
@@ -123,16 +142,19 @@ router.get(
  */
 router.get(
   '/daily-visits',
+  requirePermission('VIEW_DAILY_VISITS'),
   validate(listDailyVisitsQuerySchema, 'query'),
   controller.listDailyVisits,
 );
 router.get(
   '/daily-visits/export.xlsx',
+  requirePermission('EXPORT_DAILY_VISITS'),
   validate(listDailyVisitsQuerySchema, 'query'),
   controller.exportDailyVisitsXlsx,
 );
 router.get(
   '/daily-visits/export.pdf',
+  requirePermission('EXPORT_DAILY_VISITS'),
   validate(listDailyVisitsQuerySchema, 'query'),
   controller.exportDailyVisitsPdf,
 );
@@ -140,20 +162,25 @@ router.get(
 /**
  * Overall Monthly Reports — FRD §3.12.
  * Three views over the same data: snapshot summary, per-region rows,
- * and a year-long monthly series for charts.
+ * and a year-long monthly series for charts. All three gated by the
+ * same VIEW_MONTHLY_REPORTS key — the FRD treats §3.12.1/2/3 as a
+ * single "monthly reports" feature.
  */
 router.get(
   '/reports/summary',
+  requirePermission('VIEW_MONTHLY_REPORTS'),
   validate(summaryQuerySchema, 'query'),
   controller.overallSummary,
 );
 router.get(
   '/reports/regional',
+  requirePermission('VIEW_MONTHLY_REPORTS'),
   validate(regionalQuerySchema, 'query'),
   controller.regionalReport,
 );
 router.get(
   '/reports/analysis',
+  requirePermission('VIEW_MONTHLY_REPORTS'),
   validate(analysisQuerySchema, 'query'),
   controller.monthlyAnalysis,
 );
@@ -161,40 +188,51 @@ router.get(
 /**
  * Additional Tasks — FRD §3.9.
  * Export routes BEFORE /:id (Express order trick).
+ *
+ * Read keys (VIEW_*) gate list + detail; MANAGE_* gates writes;
+ * EXPORT_* gates the file endpoints. Matches the FRD §4.2.1.2
+ * permission catalog exactly.
  */
 router.get(
   '/additional-tasks',
+  requirePermission('VIEW_ADDITIONAL_TASKS'),
   validate(listAdditionalTasksQuerySchema, 'query'),
   controller.listAdditionalTasks,
 );
 router.post(
   '/additional-tasks',
+  requirePermission('MANAGE_ADDITIONAL_TASKS'),
   validate(createAdditionalTaskSchema),
   controller.createAdditionalTask,
 );
 router.get(
   '/additional-tasks/export.xlsx',
+  requirePermission('EXPORT_ADDITIONAL_TASKS'),
   validate(listAdditionalTasksQuerySchema, 'query'),
   controller.exportAdditionalTasksXlsx,
 );
 router.get(
   '/additional-tasks/export.pdf',
+  requirePermission('EXPORT_ADDITIONAL_TASKS'),
   validate(listAdditionalTasksQuerySchema, 'query'),
   controller.exportAdditionalTasksPdf,
 );
 router.get(
   '/additional-tasks/:id',
+  requirePermission('VIEW_ADDITIONAL_TASK_DETAILS'),
   validate(idParamSchema, 'params'),
   controller.getAdditionalTask,
 );
 router.patch(
   '/additional-tasks/:id',
+  requirePermission('MANAGE_ADDITIONAL_TASKS'),
   validate(idParamSchema, 'params'),
   validate(updateAdditionalTaskSchema),
   controller.updateAdditionalTask,
 );
 router.delete(
   '/additional-tasks/:id',
+  requirePermission('MANAGE_ADDITIONAL_TASKS'),
   validate(idParamSchema, 'params'),
   controller.deleteAdditionalTask,
 );
