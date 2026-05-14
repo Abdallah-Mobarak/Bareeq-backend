@@ -13,7 +13,12 @@ const {
 
 const router = Router();
 
-router.use(requireAuth, requireRole('MANAGER'));
+/**
+ * FRD §3.10 (Manager) + §4.11 (Admin) — both roles manage
+ * representatives. Admin's view shows the "Manager Name" column
+ * (FRD §4.11.1) — the serialiser already includes it.
+ */
+router.use(requireAuth, requireRole('MANAGER', 'ADMIN'));
 
 router.get(
   '/',

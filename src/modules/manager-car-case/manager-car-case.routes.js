@@ -13,7 +13,12 @@ const {
 
 const router = Router();
 
-router.use(requireAuth, requireRole('MANAGER'));
+/**
+ * FRD §3.8 (Manager) + §4.10 (Admin) — both roles manage car cases.
+ * Admin's view includes the `manager` field (FRD §4.10.1 "Manager
+ * Name" column) which our serialiser already returns.
+ */
+router.use(requireAuth, requireRole('MANAGER', 'ADMIN'));
 
 router.get('/', validate(listCarCasesQuerySchema, 'query'), controller.listCarCases);
 router.post('/', validate(createCarCaseSchema), controller.createCarCase);

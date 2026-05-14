@@ -22,14 +22,28 @@ const {
 const router = Router();
 
 /**
- * Manager web portal — FRD §3.
- * Every route here is MANAGER-only. Per-feature permissions (via the
- * dynamic PermissionRole system) are layered on later; the role guard
- * here is the broad first line.
+ * Manager web portal — FRD §3 (manager view) AND FRD §4.3–§4.13
+ * (admin view). The two roles see the same underlying data; per
+ * FRD §4 the admin also sees a "Manager Name" column on the CRUD
+ * lists, which our serialisers already include.
+ *
+ * Per-feature permissions for managers (via the dynamic
+ * PermissionRole system) are layered on later; the role guard here
+ * is the broad first line.
+ *
+ * NOTE on URL naming: `/manager/*` is misleading now that admin uses
+ * these routes too. Acceptable interim — the alternative is renaming
+ * to `/portal/*` which is a breaking change. Tracked as Sprint 3
+ * cleanup.
  */
-router.use(requireAuth, requireRole('MANAGER'));
+router.use(requireAuth, requireRole('MANAGER', 'ADMIN'));
 
-router.get('/my-profile', controller.myProfile);
+/**
+ * /my-profile is the only route that's truly manager-specific —
+ * admins have their own profile via /auth/me. The route-level guard
+ * overrides the broader allow-list above for ADMIN.
+ */
+router.get('/my-profile', requireRole('MANAGER'), controller.myProfile);
 
 router.get(
   '/teams',

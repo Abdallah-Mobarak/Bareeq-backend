@@ -13,7 +13,12 @@ const {
 
 const router = Router();
 
-router.use(requireAuth, requireRole('MANAGER'));
+/**
+ * FRD §3.7 (Manager) + §4.9 (Admin) — both roles manage clients.
+ * Admin's serialiser already includes the `manager` field so the
+ * "Manager Name" column from §4.9.1 surfaces automatically.
+ */
+router.use(requireAuth, requireRole('MANAGER', 'ADMIN'));
 
 /**
  * Monthly Sales / Clients — FRD §3.7.
