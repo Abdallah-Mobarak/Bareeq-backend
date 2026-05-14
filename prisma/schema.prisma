@@ -26,6 +26,20 @@ enum SystemRole {
   SUPERVISOR
   COMPANY_USER
   ACCOUNTANT_MANAGER
+  CUSTOMER
+  SERVICE_PROVIDER
+}
+
+/// KYC / verification state for a ServiceProvider account.
+/// NOT_SUBMITTED → freshly signed up, no docs yet.
+/// PENDING       → docs uploaded, admin review queued.
+/// APPROVED      → admin verified; SP can accept bookings.
+/// REJECTED      → admin rejected; SP must resubmit.
+enum KycStatus {
+  NOT_SUBMITTED
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 /// Whether the account can log in. Admin-controlled.
@@ -63,6 +77,15 @@ enum DocumentationStatus {
 enum ContactMessageStatus {
   PENDING
   REPLIED
+}
+
+/// What a OneTimeCode is verifying. Lets us route one shared table to
+/// multiple flows without entangling them (Marketplace §1.1, §2.1).
+enum OneTimeCodePurpose {
+  CUSTOMER_SIGNUP
+  SERVICE_PROVIDER_SIGNUP
+  CUSTOMER_PASSWORD_RESET
+  SERVICE_PROVIDER_PASSWORD_RESET
 }
 
 // ============================================
@@ -121,6 +144,11 @@ model User {
   carCasesCreated             CarCase[]                           @relation("CarCaseCreatedBy")
   carCasesAssigned            CarCase[]                           @relation("CarCaseSupervisor")
   representatives             Representative[]                    @relation("RepresentativeCreatedBy")
+
+  // Marketplace satellites — populated only when role is CUSTOMER /
+  // SERVICE_PROVIDER. NULL for management-system users.
+  customer        Customer?
+  serviceProvider ServiceProvider?
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -906,4 +934,92 @@ model SystemSetting {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("system_settings")
+}
+
+// ============================================
+// MARKETPLACE — Phase 4 / Sprint 3
+// ============================================
+// Satellite tables for marketplace-specific data. The User row holds
+// auth (email/password/status); these tables hold business-domain
+// fields. 1:1 with User via `userId`. onDelete: Cascade — deleting
+// the auth account removes the marketplace profile too.
+// ============================================
+
+/// A Customer is a marketplace buyer. Account self-created via
+/// /auth/customer/signup with email-OTP verification (FRD §1.1).
+model Customer {
+  id     String @id @default(cuid())
+  userId String @unique @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  profilePicture String? @map("profile_picture")
+
+  /// In-app wallet balance, used Sprint 4 (FRD §1.1 Wallet Balance Setup).
+  /// Decimal(12,2) gives 10 integer digits + 2 fractional — enough for SAR.
+  walletBalance Decimal @default(0) @db.Decimal(12, 2) @map("wallet_balance")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([deletedAt])
+  @@map("customers")
+}
+
+/// A ServiceProvider is a marketplace seller. Account self-created via
+/// /auth/service-provider/signup with email-OTP verification (FRD §2.1).
+/// Bookings, service offerings, and ratings are wired Sprint 4.
+model ServiceProvider {
+  id     String @id @default(cuid())
+  userId String @unique @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  profilePicture String? @map("profile_picture")
+  bio            String?
+
+  // ── KYC / verification (Sprint 4 admin review flow) ────────────────
+  /// Convenience flag derived from kycStatus = APPROVED. Kept as its
+  /// own column so list queries don't have to compare enums.
+  isVerified Boolean   @default(false) @map("is_verified")
+  kycStatus  KycStatus @default(NOT_SUBMITTED) @map("kyc_status")
+  verifiedAt DateTime? @map("verified_at")
+
+  // ── Financials (Sprint 4) ──────────────────────────────────────────
+  walletBalance Decimal @default(0) @db.Decimal(12, 2) @map("wallet_balance")
+
+  // ── Ratings (Sprint 4, denormalised for fast list display) ─────────
+  /// Average over all reviews. NULL until first review.
+  ratingAverage Decimal? @db.Decimal(3, 2) @map("rating_average")
+  ratingCount   Int      @default(0) @map("rating_count")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([kycStatus])
+  @@index([isVerified])
+  @@index([deletedAt])
+  @@map("service_providers")
+}
+
+/// Short-lived verification code (e.g. signup OTP, password-reset OTP).
+/// Verifies an *identifier* (email/phone), not a user — so it works
+/// before the User row exists. Deliberately not related to User.
+///
+/// Why a hash, not the code: if the DB is ever leaked, codes stay private.
+/// Why `consumedAt` instead of deleting: audit trail (did the user verify?).
+/// Why `attempts`: cheap brute-force defence — invalidate after N tries.
+model OneTimeCode {
+  id         String             @id @default(cuid())
+  identifier String // email or phone the OTP was delivered to
+  codeHash   String             @map("code_hash") // bcrypt hash, never plaintext
+  purpose    OneTimeCodePurpose
+  expiresAt  DateTime           @map("expires_at")
+  consumedAt DateTime?          @map("consumed_at") // single-use; null until verified
+  attempts   Int                @default(0)
+  createdAt  DateTime           @default(now()) @map("created_at")
+
+  @@index([identifier, purpose])
+  @@index([expiresAt])
+  @@map("one_time_codes")
 }
