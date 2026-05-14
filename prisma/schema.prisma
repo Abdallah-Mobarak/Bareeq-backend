@@ -116,6 +116,22 @@ enum NotificationType {
 
   // Wallet lifecycle (Sprint 4 e-Wallet)
   TOPUP_RECEIVED
+
+  // Withdrawal lifecycle (Sprint 4 SP cash-out)
+  WITHDRAWAL_APPROVED
+  WITHDRAWAL_REJECTED
+}
+
+/// Lifecycle of a WithdrawalRequest (FRD §3.5.2).
+///   PENDING   → SP submitted; awaiting admin review.
+///   APPROVED  → admin transferred + wallet debited (WITHDRAWAL txn).
+///   REJECTED  → admin denied; no money movement; adminNote captures why.
+///   CANCELLED → SP withdrew the request before admin reviewed it.
+enum WithdrawalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
 }
 
 /// Direction + intent of a WalletTransaction. The sign is implied:
@@ -246,6 +262,10 @@ model User {
 
   // Wallet ledger — every TOPUP/DEBIT/CREDIT/REFUND etc. for this user.
   walletTransactions WalletTransaction[]
+
+  // Withdrawal requests — SP requests cash-out; admin reviews.
+  withdrawalRequests        WithdrawalRequest[] @relation("WithdrawalSp")
+  withdrawalRequestsReviewed WithdrawalRequest[] @relation("WithdrawalAdmin")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -1510,9 +1530,89 @@ model WalletTransaction {
   /// auto-generated for booking events ("Payment for booking abc123").
   note String?
 
+  /// Back-reference for WITHDRAWAL transactions. NULL for every other
+  /// type. The withdrawal row owns the FK (walletTransactionId) so it
+  /// can be set atomically with the wallet debit.
+  withdrawalRequest WithdrawalRequest?
+
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([userId, createdAt])
   @@index([bookingId])
   @@map("wallet_transactions")
+}
+
+// ============================================
+// WITHDRAWAL REQUESTS — Sprint 4 (FRD §3.5.2)
+// ============================================
+// SP-side cash-out flow. SPs build up balance through completed
+// WALLET bookings (BOOKING_CREDIT - COMMISSION_DEBIT). Withdrawals
+// pull money OUT of the wallet via the same WalletTransaction
+// ledger, just typed as WITHDRAWAL.
+//
+// Lifecycle: SP submits PENDING → admin reviews → APPROVED (with
+// bank ref) or REJECTED (with note) or CANCELLED (by SP before
+// admin reviewed).
+//
+// Money invariant:
+//   - On PENDING create: NO wallet movement yet. The admin is the
+//     one who actually wires the bank transfer, so the wallet debit
+//     happens at the APPROVED moment, atomically with status update.
+//   - This means an SP CAN have PENDING > balance if their balance
+//     drops after submitting (e.g. an ADJUSTMENT_DEBIT). To prevent
+//     that, we enforce a single-PENDING-at-a-time rule per SP.
+//
+// Bank details:
+//   - Captured per-request for MVP. When SP profile gains a "saved
+//     bank account" entity later, the request body becomes optional
+//     and falls back to the saved details.
+// ============================================
+
+model WithdrawalRequest {
+  id String @id @default(cuid())
+
+  /// The SP requesting the withdrawal.
+  spId String @map("sp_id")
+  sp   User   @relation("WithdrawalSp", fields: [spId], references: [id])
+
+  /// Always positive. Validated against SP balance at create time;
+  /// debited from the wallet at admin-approval time.
+  amount Decimal @db.Decimal(12, 2)
+
+  // SP-provided bank details for THIS request
+  bankName          String  @map("bank_name")
+  bankAccountIban   String  @map("bank_account_iban")
+  accountHolderName String  @map("account_holder_name")
+
+  status WithdrawalStatus @default(PENDING)
+
+  /// Admin who reviewed it (NULL while PENDING / CANCELLED-by-SP).
+  reviewedById String?   @map("reviewed_by_id")
+  reviewedBy   User?     @relation("WithdrawalAdmin", fields: [reviewedById], references: [id])
+  reviewedAt   DateTime? @map("reviewed_at")
+
+  /// On APPROVED: admin pastes the bank's transfer reference here
+  /// (mandatory at the validation layer — proof the money actually
+  /// moved). On REJECTED: NULL.
+  bankTransferRef String? @map("bank_transfer_ref")
+
+  /// On REJECTED: admin's reason (visible to SP). On APPROVED: optional
+  /// notes ("Wire fees absorbed by platform" etc.).
+  adminNote String? @map("admin_note")
+
+  /// Optional reason captured when the SP cancels their own request.
+  cancellationReason String? @map("cancellation_reason")
+
+  /// FK to the WalletTransaction created when this withdrawal was
+  /// approved. Lets us trace request → ledger row → balance change
+  /// without ambiguity.
+  walletTransactionId String?            @unique @map("wallet_transaction_id")
+  walletTransaction   WalletTransaction? @relation(fields: [walletTransactionId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([spId, status])
+  @@index([status, createdAt]) // pending queue for admin
+  @@map("withdrawal_requests")
 }

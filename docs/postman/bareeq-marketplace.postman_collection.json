@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Bareeq Marketplace (Sprint 3)",
-    "description": "Marketplace endpoints — Sprint 3 + Sprint 4 bookings.\n\nUsage:\n1. Import this collection AND the matching `bareeq-api.postman_environment.json` environment file.\n2. Select the 'Bareeq Local' environment in the top-right.\n3. Run the folders top-to-bottom (or use the Runner on the whole collection).\n   - Each Create endpoint auto-captures its ID + tokens into env variables.\n   - Customer + SP signup capture the dev-mode OTP into env automatically.\n\nFolder layout:\n  00 — Admin Login                captures adminAccessToken\n  01 — Customer Auth              signup → verify (auto-login) → password reset\n  02 — Service Provider Auth      same shape as Customer Auth\n  03 — Admin Service Categories   CRUD (requires admin token from folder 00)\n  04 — Admin Services             CRUD + commission + nested subcategories\n  05 — Customer Home              browse / filter / search / detail\n  06 — Customer Profile           GET / PATCH / change-password\n  07 — Service Provider Profile   GET / PATCH / change-password\n  08 — Admin Customers            list / detail / block-unblock\n  09 — Admin Service Providers    list / detail / block-unblock / KYC review\n  10 — Customer Bookings          create / list / detail / cancel\n  11 — SP Bookings                pool / accept / list / start / complete\n  12 — Admin Bookings             list / detail (read-only oversight)\n  13 — Customer Reviews           submit + get own (under /customer/bookings/:id/review)\n  14 — SP Reviews                 list reviews received on my work\n  15 — Admin Reviews              list + detail oversight\n  16 — Notifications              list / unread-count / mark-read / mark-all-read\n  17 — Customer Wallet            balance + transactions\n  18 — SP Wallet                  balance + aggregates + transactions\n  19 — Admin Wallets              top-up / adjustment / view any user wallet\n\nFRD references: Service Management §1.1, §1.2, §1.3, §2.1, §2.2, §2.3, §3.2, §3.4, §3.5 (financial), §1.4/§2.4/§3.13 (notifications).",
+    "description": "Marketplace endpoints — Sprint 3 + Sprint 4 bookings.\n\nUsage:\n1. Import this collection AND the matching `bareeq-api.postman_environment.json` environment file.\n2. Select the 'Bareeq Local' environment in the top-right.\n3. Run the folders top-to-bottom (or use the Runner on the whole collection).\n   - Each Create endpoint auto-captures its ID + tokens into env variables.\n   - Customer + SP signup capture the dev-mode OTP into env automatically.\n\nFolder layout:\n  00 — Admin Login                captures adminAccessToken\n  01 — Customer Auth              signup → verify (auto-login) → password reset\n  02 — Service Provider Auth      same shape as Customer Auth\n  03 — Admin Service Categories   CRUD (requires admin token from folder 00)\n  04 — Admin Services             CRUD + commission + nested subcategories\n  05 — Customer Home              browse / filter / search / detail\n  06 — Customer Profile           GET / PATCH / change-password\n  07 — Service Provider Profile   GET / PATCH / change-password\n  08 — Admin Customers            list / detail / block-unblock\n  09 — Admin Service Providers    list / detail / block-unblock / KYC review\n  10 — Customer Bookings          create / list / detail / cancel\n  11 — SP Bookings                pool / accept / list / start / complete\n  12 — Admin Bookings             list / detail (read-only oversight)\n  13 — Customer Reviews           submit + get own (under /customer/bookings/:id/review)\n  14 — SP Reviews                 list reviews received on my work\n  15 — Admin Reviews              list + detail oversight\n  16 — Notifications              list / unread-count / mark-read / mark-all-read\n  17 — Customer Wallet            balance + transactions\n  18 — SP Wallet                  balance + aggregates + transactions\n  19 — Admin Wallets              top-up / adjustment / view any user wallet\n  20 — SP Withdrawals             request / list / cancel cash-out\n  21 — Admin Withdrawals          review queue / approve / reject\n\nFRD references: Service Management §1.1, §1.2, §1.3, §2.1, §2.2, §2.3, §3.2, §3.4, §3.5 (financial + withdrawals), §1.4/§2.4/§3.13 (notifications).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -1396,6 +1396,172 @@
               "raw": "{\n  \"direction\": \"DEBIT\",\n  \"amount\": 50,\n  \"note\": \"Dispute resolution — customer was overcharged on booking abc123\"\n}"
             },
             "description": "Manual adjustment to any user's wallet (CUSTOMER or SP). `note` is REQUIRED — it goes into the audit trail. Use this to push money to an SP (DEBIT impossible for customer if it would go negative)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "20 — SP Withdrawals (FRD §3.5.2)",
+      "item": [
+        {
+          "name": "POST /service-provider/withdrawals (request) — captures withdrawalId",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success && res.data) {",
+                  "  pm.environment.set('withdrawalId', res.data.id);",
+                  "  console.log('Withdrawal requested — amount:', res.data.amount);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{spAccessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/service-provider/withdrawals",
+              "host": ["{{baseUrl}}"],
+              "path": ["service-provider", "withdrawals"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 100,\n  \"bankName\": \"Al Rajhi Bank\",\n  \"bankAccountIban\": \"SA0380000000608010167519\",\n  \"accountHolderName\": \"Test Provider\"\n}"
+            },
+            "description": "Minimum 50 SAR. Validates amount ≤ wallet balance + only ONE PENDING per SP at a time. No wallet movement here — debit happens at admin-approval time."
+          }
+        },
+        {
+          "name": "GET /service-provider/withdrawals (list mine)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{spAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/service-provider/withdrawals?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["service-provider", "withdrawals"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "status", "value": "PENDING", "disabled": true, "description": "PENDING | APPROVED | REJECTED | CANCELLED" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /service-provider/withdrawals/:id",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{spAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/service-provider/withdrawals/{{withdrawalId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["service-provider", "withdrawals", "{{withdrawalId}}"]
+            }
+          }
+        },
+        {
+          "name": "POST /service-provider/withdrawals/:id/cancel",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{spAccessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/service-provider/withdrawals/{{withdrawalId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["service-provider", "withdrawals", "{{withdrawalId}}", "cancel"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Changed bank account; will resubmit\"\n}"
+            },
+            "description": "SP cancels their own PENDING request. Allowed ONLY while PENDING — once admin approved or rejected, status is terminal."
+          }
+        }
+      ]
+    },
+    {
+      "name": "21 — Admin Withdrawals (FRD §3.5.2)",
+      "item": [
+        {
+          "name": "GET /admin/withdrawals (review queue)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/admin/withdrawals?page=1&limit=20&sort=pendingFirst",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "withdrawals"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "status", "value": "PENDING", "disabled": true },
+                { "key": "spId", "value": "", "disabled": true },
+                { "key": "sort", "value": "pendingFirst", "description": "pendingFirst | newest | oldest" }
+              ]
+            },
+            "description": "pendingFirst surfaces PENDING rows at the top of the queue, then oldest within group."
+          }
+        },
+        {
+          "name": "GET /admin/withdrawals/:id",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/admin/withdrawals/{{withdrawalId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "withdrawals", "{{withdrawalId}}"]
+            }
+          }
+        },
+        {
+          "name": "POST /admin/withdrawals/:id/approve",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/withdrawals/{{withdrawalId}}/approve",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "withdrawals", "{{withdrawalId}}", "approve"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bankTransferRef\": \"WIRE-2026-05-14-001\",\n  \"adminNote\": \"Wire fee absorbed by platform\"\n}"
+            },
+            "description": "Atomic: debits SP wallet (WITHDRAWAL txn) + flips status to APPROVED + captures bank ref. If SP balance dropped below amount since submission, the wallet helper throws 400 and the whole transaction rolls back. Fires WITHDRAWAL_APPROVED notif."
+          }
+        },
+        {
+          "name": "POST /admin/withdrawals/:id/reject",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/withdrawals/{{withdrawalId}}/reject",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "withdrawals", "{{withdrawalId}}", "reject"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"adminNote\": \"IBAN format invalid; please verify and resubmit\"\n}"
+            },
+            "description": "No wallet movement — just flips status to REJECTED and captures the admin's reason. The SP sees the reason in their WITHDRAWAL_REJECTED notification."
           }
         }
       ]

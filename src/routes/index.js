@@ -20,6 +20,8 @@ const notificationsRoutes = require('../modules/notifications/notifications.rout
 const customerWalletRoutes = require('../modules/customer-wallet/customer-wallet.routes');
 const serviceProviderWalletRoutes = require('../modules/service-provider-wallet/service-provider-wallet.routes');
 const adminWalletsRoutes = require('../modules/admin-wallets/admin-wallets.routes');
+const serviceProviderWithdrawalsRoutes = require('../modules/service-provider-withdrawals/service-provider-withdrawals.routes');
+const adminWithdrawalsRoutes = require('../modules/admin-withdrawals/admin-withdrawals.routes');
 const permissionsRoutes = require('../modules/permissions/permissions.routes');
 const permissionRolesRoutes = require('../modules/permission-roles/permission-roles.routes');
 const managersRoutes = require('../modules/managers/managers.routes');
@@ -80,6 +82,8 @@ router.use('/notifications', notificationsRoutes);
 router.use('/customer/wallet', customerWalletRoutes);
 router.use('/service-provider/wallet', serviceProviderWalletRoutes);
 router.use('/admin/wallets', adminWalletsRoutes);
+router.use('/service-provider/withdrawals', serviceProviderWithdrawalsRoutes);
+router.use('/admin/withdrawals', adminWithdrawalsRoutes);
 router.use('/permissions', permissionsRoutes);
 router.use('/permission-roles', permissionRolesRoutes);
 router.use('/managers', managersRoutes);
