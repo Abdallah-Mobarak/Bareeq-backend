@@ -16,4 +16,9 @@ const getServiceDetail = asyncHandler(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
-module.exports = { listCategories, listServices, getServiceDetail };
+const listServiceReviews = asyncHandler(async (req, res) => {
+  const result = await service.listServiceReviews(req.params.id, req.validatedQuery);
+  res.json({ success: true, ...result });
+});
+
+module.exports = { listCategories, listServices, getServiceDetail, listServiceReviews };

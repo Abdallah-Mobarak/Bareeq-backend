@@ -187,6 +187,10 @@ model User {
   bookingsAsCustomer Booking[] @relation("BookingCustomer")
   bookingsAsSp       Booking[] @relation("BookingSp")
 
+  // Marketplace reviews — customer authors them; SP gets reviewed.
+  reviewsAuthored Review[] @relation("ReviewCustomer")
+  reviewsReceived Review[] @relation("ReviewServiceProvider")
+
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
@@ -1124,6 +1128,7 @@ model Service {
 
   subcategories ServiceSubcategory[]
   bookings      Booking[]
+  reviews       Review[]
 
   // Denormalised aggregates from customer reviews (Sprint 4 review flow).
   // Kept on the row so list queries don't have to join + aggregate.
@@ -1242,6 +1247,10 @@ model Booking {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  /// At most one review per booking (enforced by Review.bookingId unique).
+  /// Populated once the customer rates the COMPLETED booking.
+  review Review?
+
   @@index([customerId, status])
   @@index([assignedSpId, status])
   @@index([status, createdAt]) // pool query: PENDING ordered by oldest first
@@ -1270,4 +1279,68 @@ model BookingSubcategory {
   @@unique([bookingId, subcategoryId])
   @@index([bookingId])
   @@map("booking_subcategories")
+}
+
+// ============================================
+// MARKETPLACE REVIEWS — Sprint 4
+// ============================================
+// FRD §1.2.1 / §1.2.2 (rating shown to customer) + §2 (SP receives
+// review on their work). A review is created by the customer who
+// placed the booking, after it transitions to COMPLETED.
+//
+// Aggregation strategy:
+//   The Service and ServiceProvider tables carry denormalised
+//   ratingAverage + ratingCount columns. On every review create we
+//   recompute both aggregates inside the same transaction so list
+//   endpoints (Customer Home, admin SP list) never have to join +
+//   AVG() at read time. ratingAverage is Decimal(3,2) → range 0.00
+//   to 5.00 with 2 decimal places.
+//
+// Immutability:
+//   Reviews are frozen on submit (no PATCH / DELETE in MVP). If we
+//   later need edit-window support, add an `editedAt` column and
+//   allow updates within N minutes — schema is forward-compatible.
+//
+// One review per booking:
+//   Enforced by @unique on bookingId. The customer can review their
+//   COMPLETED bookings exactly once. If they want to revise, that's
+//   an admin workflow (Sprint 4+).
+// ============================================
+
+model Review {
+  id String @id @default(cuid())
+
+  /// At most one review per booking — the unique constraint guarantees
+  /// the customer can't double-review the same job.
+  bookingId String  @unique @map("booking_id")
+  booking   Booking @relation(fields: [bookingId], references: [id])
+
+  /// Who left the review. Denormalised from booking.customerId, kept
+  /// here so SP-side queries don't need a 2-hop join.
+  customerId String @map("customer_id")
+  customer   User   @relation("ReviewCustomer", fields: [customerId], references: [id])
+
+  /// Who received it. Denormalised from booking.assignedSpId.
+  serviceProviderId String @map("service_provider_id")
+  serviceProvider   User   @relation("ReviewServiceProvider", fields: [serviceProviderId], references: [id])
+
+  /// Which service the review is for. Lets Customer Home aggregate
+  /// rating per service (without joining through bookings).
+  serviceId String  @map("service_id")
+  service   Service @relation(fields: [serviceId], references: [id])
+
+  /// 1..5 stars (FRD §1.2.1 "Service Rating").
+  rating Int
+
+  /// Optional free-text comment. Capped at 1000 chars at the validation
+  /// layer; @db.Text in case we relax that later.
+  comment String? @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([serviceProviderId])
+  @@index([serviceId])
+  @@index([customerId])
+  @@map("reviews")
 }

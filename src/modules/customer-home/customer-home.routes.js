@@ -8,6 +8,7 @@ const {
   categoriesListSchema,
   servicesListSchema,
   idParamSchema,
+  reviewsListQuerySchema,
 } = require('./customer-home.validation');
 
 const router = Router();
@@ -21,5 +22,11 @@ router.use(requireAuth, requireRole('CUSTOMER'));
 router.get('/categories', validate(categoriesListSchema, 'query'), controller.listCategories);
 router.get('/services', validate(servicesListSchema, 'query'), controller.listServices);
 router.get('/services/:id', validate(idParamSchema, 'params'), controller.getServiceDetail);
+router.get(
+  '/services/:id/reviews',
+  validate(idParamSchema, 'params'),
+  validate(reviewsListQuerySchema, 'query'),
+  controller.listServiceReviews,
+);
 
 module.exports = router;

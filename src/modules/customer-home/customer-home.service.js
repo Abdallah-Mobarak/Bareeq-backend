@@ -207,4 +207,56 @@ const getServiceDetail = async (id) => {
   return serializeServiceDetail(svc);
 };
 
-module.exports = { listCategories, listServices, getServiceDetail };
+/**
+ * Public reviews for a service. Anyone authenticated as a CUSTOMER
+ * can see them — they're the social proof that drives bookings.
+ * The customer's name is included so reviews feel like real people;
+ * the email/phone are NOT (PII minimisation).
+ */
+const listServiceReviews = async (serviceId, { page, limit }) => {
+  // Verify the service exists & is active before exposing reviews
+  const svc = await prisma.service.findFirst({
+    where: { id: serviceId, deletedAt: null, isActive: true },
+    select: { id: true },
+  });
+  if (!svc) {
+    throw ApiError.notFound('Service not found');
+  }
+
+  const skip = (page - 1) * limit;
+
+  const [items, total] = await prisma.$transaction([
+    prisma.review.findMany({
+      where: { serviceId },
+      skip,
+      take: limit,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        customer: { select: { id: true, nameAr: true, nameEn: true } },
+      },
+    }),
+    prisma.review.count({ where: { serviceId } }),
+  ]);
+
+  return {
+    items: items.map((r) => ({
+      id: r.id,
+      rating: r.rating,
+      comment: r.comment,
+      customer: {
+        id: r.customer.id,
+        nameAr: r.customer.nameAr,
+        nameEn: r.customer.nameEn,
+      },
+      createdAt: r.createdAt,
+    })),
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit) || 1,
+    },
+  };
+};
+
+module.exports = { listCategories, listServices, getServiceDetail, listServiceReviews };

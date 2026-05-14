@@ -39,4 +39,14 @@ const idParamSchema = Joi.object({
   id: Joi.string().required(),
 });
 
-module.exports = { categoriesListSchema, servicesListSchema, idParamSchema };
+const reviewsListQuerySchema = Joi.object({
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(100).default(20),
+});
+
+module.exports = {
+  categoriesListSchema,
+  servicesListSchema,
+  idParamSchema,
+  reviewsListQuerySchema,
+};
