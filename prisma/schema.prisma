@@ -88,6 +88,38 @@ enum OneTimeCodePurpose {
   SERVICE_PROVIDER_PASSWORD_RESET
 }
 
+/// Lifecycle of a marketplace Booking (FRD §1.3, §2.3).
+/// PENDING     → customer created; no SP has accepted yet.
+/// APPROVED    → an SP accepted; assignment is locked + commission frozen.
+/// IN_PROGRESS → SP marked the work started.
+/// COMPLETED   → SP marked the work done.
+/// CANCELLED   → customer cancelled while still PENDING.
+/// REJECTED    → expired in the pool / admin rejected (Sprint 4+ extension).
+enum BookingStatus {
+  PENDING
+  APPROVED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  REJECTED
+}
+
+/// How the customer chose to pay (§1.2.2.1). MVP supports CASH only;
+/// WALLET + ONLINE land with the payment integration in Sprint 4.
+enum BookingPaymentMethod {
+  CASH
+  WALLET
+  ONLINE
+}
+
+/// Where the booking is in its payment lifecycle. PAID is set on
+/// completion for CASH, on charge for WALLET / ONLINE.
+enum BookingPaymentStatus {
+  PENDING
+  PAID
+  REFUNDED
+}
+
 // ============================================
 // IDENTITY & ACCESS — Phase 1
 // ============================================
@@ -149,6 +181,11 @@ model User {
   // SERVICE_PROVIDER. NULL for management-system users.
   customer        Customer?
   serviceProvider ServiceProvider?
+
+  // Marketplace bookings — customer creates them, SP gets assigned
+  // when they accept (so assignedSpId is also a User FK).
+  bookingsAsCustomer Booking[] @relation("BookingCustomer")
+  bookingsAsSp       Booking[] @relation("BookingSp")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -1086,6 +1123,7 @@ model Service {
   sortOrder Int     @default(0) @map("sort_order")
 
   subcategories ServiceSubcategory[]
+  bookings      Booking[]
 
   // Denormalised aggregates from customer reviews (Sprint 4 review flow).
   // Kept on the row so list queries don't have to join + aggregate.
@@ -1116,10 +1154,120 @@ model ServiceSubcategory {
 
   sortOrder Int @default(0) @map("sort_order")
 
+  bookingSubcategories BookingSubcategory[]
+
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
   @@index([serviceId, deletedAt])
   @@map("service_subcategories")
+}
+
+// ============================================
+// MARKETPLACE BOOKINGS — Sprint 4 (early start)
+// ============================================
+// FRD §1.3 (customer booking), §2.2 + §2.3 (SP pool + lifecycle),
+// §3.3 (admin oversight).
+//
+// State machine:
+//
+//   PENDING ──(SP accepts)──→ APPROVED ──(SP starts)──→ IN_PROGRESS
+//      │                                                   │
+//      │                                                   ▼
+//      ▼                                                COMPLETED
+//   CANCELLED        REJECTED  (expired/admin-rejected;
+//   (customer)        Sprint 4+)
+//
+// Subcategories snapshot:
+//   Each `BookingSubcategory` row copies titleAr/titleEn/cost from
+//   ServiceSubcategory at booking time. So if admin later raises a
+//   subcategory's price, that change applies to NEW bookings only —
+//   historical totals stay frozen.
+//
+// Commission lock:
+//   On APPROVED the row captures the Service.commissionRate at that
+//   moment + computes commissionAmount = totalCost * rate / 100.
+//   Admin changing the rate afterwards does NOT retroactively change
+//   what the SP owes.
+// ============================================
+
+/// A marketplace booking from a Customer for a specific Service.
+/// The selected subcategories determine the totalCost (snapshot in
+/// BookingSubcategory). Lifecycle is tracked via `status`.
+model Booking {
+  id String @id @default(cuid())
+
+  // Who, what, when
+  customerId String @map("customer_id")
+  customer   User   @relation("BookingCustomer", fields: [customerId], references: [id])
+
+  serviceId String  @map("service_id")
+  service   Service @relation(fields: [serviceId], references: [id])
+
+  /// NULL until an SP accepts (transitions PENDING → APPROVED).
+  /// Once set, it's the locked assignment — no reassignment without
+  /// a cancel + new booking.
+  assignedSpId String? @map("assigned_sp_id")
+  assignedSp   User?   @relation("BookingSp", fields: [assignedSpId], references: [id])
+
+  selectedSubcategories BookingSubcategory[]
+
+  // Request details (captured at creation)
+  description     String? @db.Text
+  locationLat     Decimal? @db.Decimal(10, 7) @map("location_lat")
+  locationLng     Decimal? @db.Decimal(10, 7) @map("location_lng")
+  locationAddress String?  @map("location_address")
+  scheduledDate   DateTime @map("scheduled_date")
+
+  // Pricing — locked at creation
+  totalCost Decimal @db.Decimal(12, 2) @map("total_cost")
+
+  // Commission — locked at APPROVED (NULL while PENDING / CANCELLED)
+  commissionRate   Decimal? @db.Decimal(5, 2) @map("commission_rate")
+  commissionAmount Decimal? @db.Decimal(12, 2) @map("commission_amount")
+
+  // Status + payment
+  status        BookingStatus        @default(PENDING)
+  paymentMethod BookingPaymentMethod
+  paymentStatus BookingPaymentStatus @default(PENDING)
+
+  // Lifecycle timestamps
+  approvedAt         DateTime? @map("approved_at")
+  startedAt          DateTime? @map("started_at")
+  completedAt        DateTime? @map("completed_at")
+  cancelledAt        DateTime? @map("cancelled_at")
+  cancellationReason String?   @map("cancellation_reason")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([customerId, status])
+  @@index([assignedSpId, status])
+  @@index([status, createdAt]) // pool query: PENDING ordered by oldest first
+  @@index([serviceId])
+  @@map("bookings")
+}
+
+/// Snapshot of a subcategory picked at booking time. Cost/title are
+/// frozen here so later admin edits to ServiceSubcategory don't bleed
+/// retroactively into historical bookings (or their commission math).
+model BookingSubcategory {
+  id        String  @id @default(cuid())
+  bookingId String  @map("booking_id")
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  subcategoryId String             @map("subcategory_id")
+  subcategory   ServiceSubcategory @relation(fields: [subcategoryId], references: [id])
+
+  // Frozen at booking time
+  titleAr String  @map("title_ar")
+  titleEn String? @map("title_en")
+  cost    Decimal @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([bookingId, subcategoryId])
+  @@index([bookingId])
+  @@map("booking_subcategories")
 }
