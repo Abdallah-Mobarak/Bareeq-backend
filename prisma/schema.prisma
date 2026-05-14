@@ -1023,3 +1023,103 @@ model OneTimeCode {
   @@index([expiresAt])
   @@map("one_time_codes")
 }
+
+// ============================================
+// MARKETPLACE CATALOG — Sprint 3
+// ============================================
+// FRD §3.4 (admin) and §1.2 (customer home).
+//
+// Three-level hierarchy:
+//   ServiceCategory  →  Service  →  ServiceSubcategory
+//
+// Cost lives ONLY on Subcategory. The "Service Cost" the customer
+// sees on a service tile is the sum of selected subcategories
+// (§1.2.1 + §1.2.2). The server computes it; it is never stored on
+// Service itself — keeping a single source of truth.
+//
+// Naming: prefixed "Service*" to avoid collision with the existing
+// `Category` model used by branches in the Management System.
+// ============================================
+
+/// Top-level grouping shown on the customer home (§1.2.3 "View Categories").
+/// Manages by admin (the FRD does not name a separate "Categories
+/// Management" section, but §1.2.3 lists Name + Icon as customer-visible,
+/// so the admin must be able to create/edit them — we infer §3.4 covers it).
+model ServiceCategory {
+  id        String  @id @default(cuid())
+  titleAr   String  @map("title_ar")
+  titleEn   String? @map("title_en")
+  iconUrl   String? @map("icon_url")
+  isActive  Boolean @default(true) @map("is_active")
+  sortOrder Int     @default(0) @map("sort_order")
+
+  services Service[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([isActive, deletedAt])
+  @@index([sortOrder])
+  @@map("service_categories")
+}
+
+/// A marketplace service (e.g. "Plumbing") — admin-managed via §3.4.1.
+/// Belongs to one ServiceCategory. Its price is *not* stored here; it
+/// is computed at request time as the sum of its (selected) subcategories.
+model Service {
+  id            String  @id @default(cuid())
+  categoryId    String  @map("category_id")
+  category      ServiceCategory @relation(fields: [categoryId], references: [id])
+
+  titleAr       String  @map("title_ar")
+  titleEn       String? @map("title_en")
+  descriptionAr String? @map("description_ar")
+  descriptionEn String? @map("description_en")
+  imageUrl      String? @map("image_url")
+
+  /// Per-service commission rate in percent (FRD §3.4.1.5). Admin sets
+  /// this; payouts deduct it at booking-settlement time (Sprint 4).
+  commissionRate Decimal @default(0) @db.Decimal(5, 2) @map("commission_rate")
+
+  isActive  Boolean @default(true) @map("is_active")
+  sortOrder Int     @default(0) @map("sort_order")
+
+  subcategories ServiceSubcategory[]
+
+  // Denormalised aggregates from customer reviews (Sprint 4 review flow).
+  // Kept on the row so list queries don't have to join + aggregate.
+  ratingAverage Decimal? @db.Decimal(3, 2) @map("rating_average")
+  ratingCount   Int      @default(0) @map("rating_count")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([categoryId, isActive, deletedAt])
+  @@index([sortOrder])
+  @@index([ratingAverage])
+  @@map("services")
+}
+
+/// A line item within a Service. The CUSTOMER picks one or more of these;
+/// the total cost displayed is the sum of the picked ones (§1.2.2 +
+/// §1.2.4 "Cost Range" filter). Cascade-deleted with the parent Service.
+model ServiceSubcategory {
+  id        String  @id @default(cuid())
+  serviceId String  @map("service_id")
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  titleAr String  @map("title_ar")
+  titleEn String? @map("title_en")
+  cost    Decimal @db.Decimal(12, 2)
+
+  sortOrder Int @default(0) @map("sort_order")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([serviceId, deletedAt])
+  @@map("service_subcategories")
+}
