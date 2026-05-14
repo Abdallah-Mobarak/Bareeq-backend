@@ -10,10 +10,54 @@ const { logger } = require('../../utils/logger');
 const isEmail = (s) => s.includes('@');
 
 /**
+ * Load the user's full PermissionRole (with permission catalog rows) for
+ * the auth responses. Returns null when:
+ *   - the user has no permissionRoleId (e.g. supervisor, bootstrap admin,
+ *     customer, SP)
+ *   - the permissionRoleId points at a soft-deleted / missing row
+ *
+ * The frontend uses this to render menu items and buttons immediately on
+ * login without an extra round-trip. NOTE: this is a UI hint only — the
+ * `requirePermission` middleware re-checks against the DB on every
+ * request, so if an admin revokes a key mid-session it still takes
+ * effect within the access-token lifetime.
+ */
+const loadPermissionRoleForResponse = async (permissionRoleId) => {
+  if (!permissionRoleId) {
+    return null;
+  }
+  const role = await prisma.permissionRole.findFirst({
+    where: { id: permissionRoleId, deletedAt: null },
+    include: {
+      permissions: { include: { permission: true } },
+    },
+  });
+  if (!role) {
+    return null;
+  }
+  return {
+    id: role.id,
+    name: role.name,
+    permissions: role.permissions.map((rp) => ({
+      id: rp.permission.id,
+      key: rp.permission.key,
+      module: rp.permission.module,
+      descriptionAr: rp.permission.descriptionAr,
+      descriptionEn: rp.permission.descriptionEn,
+    })),
+  };
+};
+
+/**
  * Strip sensitive fields before sending a User over the wire.
  * Never leak `password`, even hashed, and never leak `deletedAt`.
+ *
+ * `permissionRole` is the optional inflated role object (see
+ * loadPermissionRoleForResponse). When null, the frontend treats:
+ *   - ADMIN  → bootstrap / root admin = full access
+ *   - other  → no permissions (role uses fixed capabilities)
  */
-const serializeUser = (user) => ({
+const serializeUser = (user, permissionRole = null) => ({
   id: user.id,
   email: user.email,
   phone: user.phone,
@@ -22,6 +66,7 @@ const serializeUser = (user) => ({
   nameAr: user.nameAr,
   nameEn: user.nameEn,
   permissionRoleId: user.permissionRoleId,
+  permissionRole,
 });
 
 /**
@@ -141,10 +186,12 @@ const login = async ({ identifier, password: plainPassword, deviceInfo, clientTy
 
   const refreshToken = await issueRefreshToken(user.id, deviceInfo);
 
+  const permissionRole = await loadPermissionRoleForResponse(user.permissionRoleId);
+
   logger.info({ userId: user.id, role: user.role }, 'User logged in');
 
   return {
-    user: serializeUser(user),
+    user: serializeUser(user, permissionRole),
     accessToken,
     refreshToken,
     accessTokenExpiresIn: config.jwt.accessExpiresIn,
@@ -210,9 +257,14 @@ const refresh = async ({ refreshToken: oldToken, deviceInfo }) => {
     permissionRoleId: stored.user.permissionRoleId,
   });
 
+  const permissionRole = await loadPermissionRoleForResponse(
+    stored.user.permissionRoleId,
+  );
+
   logger.info({ userId: stored.user.id }, 'Tokens refreshed');
 
   return {
+    user: serializeUser(stored.user, permissionRole),
     accessToken,
     refreshToken: newToken,
     accessTokenExpiresIn: config.jwt.accessExpiresIn,
@@ -255,7 +307,8 @@ const getMe = async (userId) => {
     throw ApiError.forbidden('Account is blocked');
   }
 
-  return serializeUser(user);
+  const permissionRole = await loadPermissionRoleForResponse(user.permissionRoleId);
+  return serializeUser(user, permissionRole);
 };
 
 module.exports = { login, refresh, logout, getMe };
