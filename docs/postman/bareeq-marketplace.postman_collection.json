@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Bareeq Marketplace (Sprint 3)",
-    "description": "Sprint 3 marketplace endpoints — Customer & Service Provider auth, admin catalog management, Customer Home, and self-service profiles.\n\nUsage:\n1. Import this collection AND the matching `bareeq-api.postman_environment.json` environment file.\n2. Select the 'Bareeq Local' environment in the top-right.\n3. Run the folders top-to-bottom (or use the Runner on the whole collection).\n   - Each Create endpoint auto-captures its ID + tokens into env variables.\n   - Customer + SP signup capture the dev-mode OTP into env automatically.\n\nFolder layout:\n  01 — Customer Auth              signup → verify (auto-login) → password reset\n  02 — Service Provider Auth      same shape as Customer Auth\n  03 — Admin Service Categories   CRUD (requires admin token from folder 00)\n  04 — Admin Services             CRUD + commission management + nested subcategories\n  05 — Customer Home              browse / filter / search / detail (uses CUSTOMER token)\n  06 — Customer Profile           GET / PATCH / change-password (self-service)\n  07 — Service Provider Profile   GET / PATCH / change-password (self-service)\n\nFRD references: Service Management §1.1, §1.2, §2.1, §3.4.",
+    "description": "Sprint 3 marketplace endpoints — Customer & Service Provider auth, admin catalog management, Customer Home, self-service profiles, and admin user management.\n\nUsage:\n1. Import this collection AND the matching `bareeq-api.postman_environment.json` environment file.\n2. Select the 'Bareeq Local' environment in the top-right.\n3. Run the folders top-to-bottom (or use the Runner on the whole collection).\n   - Each Create endpoint auto-captures its ID + tokens into env variables.\n   - Customer + SP signup capture the dev-mode OTP into env automatically.\n\nFolder layout:\n  00 — Admin Login                captures adminAccessToken\n  01 — Customer Auth              signup → verify (auto-login) → password reset\n  02 — Service Provider Auth      same shape as Customer Auth\n  03 — Admin Service Categories   CRUD (requires admin token from folder 00)\n  04 — Admin Services             CRUD + commission management + nested subcategories\n  05 — Customer Home              browse / filter / search / detail (uses CUSTOMER token)\n  06 — Customer Profile           GET / PATCH / change-password (self-service)\n  07 — Service Provider Profile   GET / PATCH / change-password (self-service)\n  08 — Admin Customers            list / detail / block-unblock\n  09 — Admin Service Providers    list / detail / block-unblock / KYC review\n\nFRD references: Service Management §1.1, §1.2, §2.1, §3.2, §3.4.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -699,6 +699,140 @@
               "mode": "raw",
               "raw": "{\n  \"currentPassword\": \"{{spPassword}}\",\n  \"newPassword\": \"newspXYZ456\"\n}"
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 — Admin Customers (FRD §3.2.1)",
+      "item": [
+        {
+          "name": "GET /admin/customers (list + filters)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/admin/customers?page=1&limit=20&sort=newest",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "customers"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "q", "value": "", "disabled": true, "description": "search email/phone/name" },
+                { "key": "status", "value": "ENABLED", "disabled": true, "description": "ENABLED | BLOCKED" },
+                { "key": "sort", "value": "newest", "description": "newest | oldest | name" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /admin/customers/:id",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/admin/customers/{{customerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "customers", "{{customerId}}"]
+            }
+          }
+        },
+        {
+          "name": "PATCH /admin/customers/:id/status (block/unblock)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/customers/{{customerId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "customers", "{{customerId}}", "status"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"BLOCKED\",\n  \"reason\": \"Suspicious activity (audit only)\"\n}"
+            },
+            "description": "Block (BLOCKED) revokes every active refresh token + bars login. Unblock (ENABLED) is idempotent — no token action. The `reason` is logged for audit; will surface in customer notifications when those ship in Sprint 4."
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 — Admin Service Providers (FRD §3.2.2 + §2.1)",
+      "item": [
+        {
+          "name": "GET /admin/service-providers (list + filters)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/admin/service-providers?page=1&limit=20&sort=newest",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "service-providers"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "q", "value": "", "disabled": true },
+                { "key": "status", "value": "ENABLED", "disabled": true },
+                { "key": "kycStatus", "value": "PENDING", "disabled": true, "description": "NOT_SUBMITTED | PENDING | APPROVED | REJECTED" },
+                { "key": "isVerified", "value": "true", "disabled": true },
+                { "key": "sort", "value": "newest", "description": "newest | oldest | name | rating | pendingFirst" }
+              ]
+            },
+            "description": "Use `sort=pendingFirst` to surface SPs awaiting KYC review at the top of the list."
+          }
+        },
+        {
+          "name": "GET /admin/service-providers/:id",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/admin/service-providers/{{spId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "service-providers", "{{spId}}"]
+            }
+          }
+        },
+        {
+          "name": "PATCH /admin/service-providers/:id/status (block/unblock)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/service-providers/{{spId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "service-providers", "{{spId}}", "status"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"BLOCKED\",\n  \"reason\": \"Multiple customer complaints (audit only)\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH /admin/service-providers/:id/kyc (approve/reject)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/service-providers/{{spId}}/kyc",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "service-providers", "{{spId}}", "kyc"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"APPROVED\",\n  \"notes\": \"All docs valid\"\n}"
+            },
+            "description": "APPROVED → sets kycStatus=APPROVED + isVerified=true + verifiedAt=now. REJECTED → kycStatus=REJECTED + isVerified=false + verifiedAt=null (clears any prior approval). `notes` is audit-only for now; will go into the SP's KYC-result notification in Sprint 4."
           }
         }
       ]

@@ -8,6 +8,8 @@ const adminServicesRoutes = require('../modules/admin-services/admin-services.ro
 const customerHomeRoutes = require('../modules/customer-home/customer-home.routes');
 const customerProfileRoutes = require('../modules/customer-profile/customer-profile.routes');
 const serviceProviderProfileRoutes = require('../modules/service-provider-profile/service-provider-profile.routes');
+const adminCustomersRoutes = require('../modules/admin-customers/admin-customers.routes');
+const adminServiceProvidersRoutes = require('../modules/admin-service-providers/admin-service-providers.routes');
 const permissionsRoutes = require('../modules/permissions/permissions.routes');
 const permissionRolesRoutes = require('../modules/permission-roles/permission-roles.routes');
 const managersRoutes = require('../modules/managers/managers.routes');
@@ -56,6 +58,8 @@ router.use('/admin/services', adminServicesRoutes);
 router.use('/customer/home', customerHomeRoutes);
 router.use('/customer/profile', customerProfileRoutes);
 router.use('/service-provider/profile', serviceProviderProfileRoutes);
+router.use('/admin/customers', adminCustomersRoutes);
+router.use('/admin/service-providers', adminServiceProvidersRoutes);
 router.use('/permissions', permissionsRoutes);
 router.use('/permission-roles', permissionRolesRoutes);
 router.use('/managers', managersRoutes);
