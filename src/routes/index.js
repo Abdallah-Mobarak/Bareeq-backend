@@ -6,6 +6,8 @@ const serviceProviderAuthRoutes = require('../modules/service-provider-auth/serv
 const adminServiceCategoriesRoutes = require('../modules/admin-service-categories/admin-service-categories.routes');
 const adminServicesRoutes = require('../modules/admin-services/admin-services.routes');
 const customerHomeRoutes = require('../modules/customer-home/customer-home.routes');
+const customerProfileRoutes = require('../modules/customer-profile/customer-profile.routes');
+const serviceProviderProfileRoutes = require('../modules/service-provider-profile/service-provider-profile.routes');
 const permissionsRoutes = require('../modules/permissions/permissions.routes');
 const permissionRolesRoutes = require('../modules/permission-roles/permission-roles.routes');
 const managersRoutes = require('../modules/managers/managers.routes');
@@ -52,6 +54,8 @@ router.use('/auth/service-provider', serviceProviderAuthRoutes);
 router.use('/admin/service-categories', adminServiceCategoriesRoutes);
 router.use('/admin/services', adminServicesRoutes);
 router.use('/customer/home', customerHomeRoutes);
+router.use('/customer/profile', customerProfileRoutes);
+router.use('/service-provider/profile', serviceProviderProfileRoutes);
 router.use('/permissions', permissionsRoutes);
 router.use('/permission-roles', permissionRolesRoutes);
 router.use('/managers', managersRoutes);

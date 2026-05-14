@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Bareeq Marketplace (Sprint 3)",
-    "description": "Sprint 3 marketplace endpoints — Customer & Service Provider auth, admin catalog management, and Customer Home browse/filter/search.\n\nUsage:\n1. Import this collection AND the matching `bareeq-api.postman_environment.json` environment file.\n2. Select the 'Bareeq Local' environment in the top-right.\n3. Run the folders top-to-bottom (or use the Runner on the whole collection).\n   - Each Create endpoint auto-captures its ID + tokens into env variables.\n   - Customer + SP signup capture the dev-mode OTP into env automatically.\n\nFolder layout:\n  01 — Customer Auth        signup → verify (auto-login) → password reset\n  02 — Service Provider Auth  same shape as Customer Auth\n  03 — Admin Service Categories  CRUD (requires admin token from main collection)\n  04 — Admin Services           CRUD + commission management + nested subcategories\n  05 — Customer Home            browse / filter / search / detail (uses CUSTOMER token)\n\nFRD references: Service Management §1.1, §1.2, §2.1, §3.4.",
+    "description": "Sprint 3 marketplace endpoints — Customer & Service Provider auth, admin catalog management, Customer Home, and self-service profiles.\n\nUsage:\n1. Import this collection AND the matching `bareeq-api.postman_environment.json` environment file.\n2. Select the 'Bareeq Local' environment in the top-right.\n3. Run the folders top-to-bottom (or use the Runner on the whole collection).\n   - Each Create endpoint auto-captures its ID + tokens into env variables.\n   - Customer + SP signup capture the dev-mode OTP into env automatically.\n\nFolder layout:\n  01 — Customer Auth              signup → verify (auto-login) → password reset\n  02 — Service Provider Auth      same shape as Customer Auth\n  03 — Admin Service Categories   CRUD (requires admin token from folder 00)\n  04 — Admin Services             CRUD + commission management + nested subcategories\n  05 — Customer Home              browse / filter / search / detail (uses CUSTOMER token)\n  06 — Customer Profile           GET / PATCH / change-password (self-service)\n  07 — Service Provider Profile   GET / PATCH / change-password (self-service)\n\nFRD references: Service Management §1.1, §1.2, §2.1, §3.4.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -584,6 +584,121 @@
               "path": ["customer", "home", "services", "{{serviceId}}"]
             },
             "description": "FRD §1.2.2. Returns the full service, every active subcategory (with cost), plus totalCost (sum of all subcategories — the 'default-all-selected' price). The client subtracts costs as the user un-picks subcategories."
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 — Customer Profile (FRD §1.1)",
+      "item": [
+        {
+          "name": "GET /customer/profile",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/customer/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["customer", "profile"]
+            },
+            "description": "Returns the joined User + Customer satellite (name, phone, email, profile picture, walletBalance). Wallet activity itself is Sprint 4."
+          }
+        },
+        {
+          "name": "PATCH /customer/profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerAccessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["customer", "profile"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nameEn\": \"Updated Name\",\n  \"phone\": \"+966509998877\",\n  \"profilePicture\": \"https://example.com/avatar.png\"\n}"
+            },
+            "description": "Partial update — only fields in the body are touched. Email is NOT editable here (would need re-verification). Empty body returns 400."
+          }
+        },
+        {
+          "name": "POST /customer/profile/change-password",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerAccessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customer/profile/change-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["customer", "profile", "change-password"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"{{customerPassword}}\",\n  \"newPassword\": \"newpassXYZ123\"\n}"
+            },
+            "description": "Requires the current password (not just the access token). On success, every active refresh token is revoked — all devices logged out. Same password as current is rejected (400)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 — Service Provider Profile (FRD §2.1)",
+      "item": [
+        {
+          "name": "GET /service-provider/profile",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{spAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/service-provider/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["service-provider", "profile"]
+            },
+            "description": "Returns User + ServiceProvider satellite — adds bio, isVerified, kycStatus, walletBalance, ratingAverage, ratingCount on top of the base fields."
+          }
+        },
+        {
+          "name": "PATCH /service-provider/profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{spAccessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/service-provider/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["service-provider", "profile"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nameEn\": \"Master Electrician\",\n  \"bio\": \"كهربائي بخبرة 15 سنة\",\n  \"profilePicture\": \"https://example.com/sp-avatar.png\"\n}"
+            },
+            "description": "Partial update. KYC document upload is NOT here — it lives in a separate /kyc/submit endpoint (Sprint 4) that handles file upload + sets kycStatus = PENDING."
+          }
+        },
+        {
+          "name": "POST /service-provider/profile/change-password",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{spAccessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/service-provider/profile/change-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["service-provider", "profile", "change-password"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"{{spPassword}}\",\n  \"newPassword\": \"newspXYZ456\"\n}"
+            }
           }
         }
       ]
