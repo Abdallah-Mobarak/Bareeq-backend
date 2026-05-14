@@ -80,6 +80,8 @@ const login = async ({ identifier, password: plainPassword, deviceInfo, clientTy
    *   ACCOUNTANT_MANAGER→ web only          (FRD §2 (AM) — no mobile mentioned, default to web)
    *   MANAGER           → web only          (FRD §3   "Web Application Functionality for Managers")
    *   ADMIN             → web only          (FRD §4   "Web Application Functionality for Admins")
+   *   CUSTOMER          → mobile only       (Marketplace §1 "Customer Mobile Application")
+   *   SERVICE_PROVIDER  → mobile only       (Marketplace §2 "Service Provider Mobile Application")
    *
    * Each value is an array of allowed surfaces so a role can span both
    * (e.g. COMPANY_USER). When the FRD adds a new surface for a role we
@@ -91,6 +93,8 @@ const login = async ({ identifier, password: plainPassword, deviceInfo, clientTy
     MANAGER: ['web'],
     COMPANY_USER: ['web', 'mobile'],
     ACCOUNTANT_MANAGER: ['web'],
+    CUSTOMER: ['mobile'],
+    SERVICE_PROVIDER: ['mobile'],
   };
   const allowedClients = ROLE_CLIENT_MAP[user.role];
   if (allowedClients && !allowedClients.includes(clientType)) {

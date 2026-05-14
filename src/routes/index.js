@@ -1,6 +1,7 @@
 const { Router } = require('express');
 
 const authRoutes = require('../modules/auth/auth.routes');
+const customerAuthRoutes = require('../modules/customer-auth/customer-auth.routes');
 const permissionsRoutes = require('../modules/permissions/permissions.routes');
 const permissionRolesRoutes = require('../modules/permission-roles/permission-roles.routes');
 const managersRoutes = require('../modules/managers/managers.routes');
@@ -42,6 +43,7 @@ const router = Router();
  */
 
 router.use('/auth', authRoutes);
+router.use('/auth/customer', customerAuthRoutes);
 router.use('/permissions', permissionsRoutes);
 router.use('/permission-roles', permissionRolesRoutes);
 router.use('/managers', managersRoutes);

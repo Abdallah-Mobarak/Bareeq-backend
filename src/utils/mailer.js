@@ -16,10 +16,7 @@ const { logger } = require('./logger');
  */
 
 const sendEmail = async ({ to, subject, body }) => {
-  logger.info(
-    { to, subject, body },
-    '[MOCK EMAIL] (replace with real provider before production)',
-  );
+  logger.info({ to, subject, body }, '[MOCK EMAIL] (replace with real provider before production)');
 };
 
 module.exports = { sendEmail };
