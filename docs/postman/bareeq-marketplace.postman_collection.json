@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Bareeq Marketplace (Sprint 3)",
-    "description": "Marketplace endpoints — Sprint 3 + Sprint 4 bookings.\n\nUsage:\n1. Import this collection AND the matching `bareeq-api.postman_environment.json` environment file.\n2. Select the 'Bareeq Local' environment in the top-right.\n3. Run the folders top-to-bottom (or use the Runner on the whole collection).\n   - Each Create endpoint auto-captures its ID + tokens into env variables.\n   - Customer + SP signup capture the dev-mode OTP into env automatically.\n\nFolder layout:\n  00 — Admin Login                captures adminAccessToken\n  01 — Customer Auth              signup → verify (auto-login) → password reset\n  02 — Service Provider Auth      same shape as Customer Auth\n  03 — Admin Service Categories   CRUD (requires admin token from folder 00)\n  04 — Admin Services             CRUD + commission + nested subcategories\n  05 — Customer Home              browse / filter / search / detail\n  06 — Customer Profile           GET / PATCH / change-password\n  07 — Service Provider Profile   GET / PATCH / change-password\n  08 — Admin Customers            list / detail / block-unblock\n  09 — Admin Service Providers    list / detail / block-unblock / KYC review\n  10 — Customer Bookings          create / list / detail / cancel\n  11 — SP Bookings                pool / accept / list / start / complete\n  12 — Admin Bookings             list / detail (read-only oversight)\n  13 — Customer Reviews           submit + get own (under /customer/bookings/:id/review)\n  14 — SP Reviews                 list reviews received on my work\n  15 — Admin Reviews              list + detail oversight\n  16 — Notifications              list / unread-count / mark-read / mark-all-read\n\nFRD references: Service Management §1.1–§1.3, §2.1–§2.3, §3.2–§3.4, §1.4 / §2.4 / §3.13 (notifications).",
+    "description": "Marketplace endpoints — Sprint 3 + Sprint 4 bookings.\n\nUsage:\n1. Import this collection AND the matching `bareeq-api.postman_environment.json` environment file.\n2. Select the 'Bareeq Local' environment in the top-right.\n3. Run the folders top-to-bottom (or use the Runner on the whole collection).\n   - Each Create endpoint auto-captures its ID + tokens into env variables.\n   - Customer + SP signup capture the dev-mode OTP into env automatically.\n\nFolder layout:\n  00 — Admin Login                captures adminAccessToken\n  01 — Customer Auth              signup → verify (auto-login) → password reset\n  02 — Service Provider Auth      same shape as Customer Auth\n  03 — Admin Service Categories   CRUD (requires admin token from folder 00)\n  04 — Admin Services             CRUD + commission + nested subcategories\n  05 — Customer Home              browse / filter / search / detail\n  06 — Customer Profile           GET / PATCH / change-password\n  07 — Service Provider Profile   GET / PATCH / change-password\n  08 — Admin Customers            list / detail / block-unblock\n  09 — Admin Service Providers    list / detail / block-unblock / KYC review\n  10 — Customer Bookings          create / list / detail / cancel\n  11 — SP Bookings                pool / accept / list / start / complete\n  12 — Admin Bookings             list / detail (read-only oversight)\n  13 — Customer Reviews           submit + get own (under /customer/bookings/:id/review)\n  14 — SP Reviews                 list reviews received on my work\n  15 — Admin Reviews              list + detail oversight\n  16 — Notifications              list / unread-count / mark-read / mark-all-read\n  17 — Customer Wallet            balance + transactions\n  18 — SP Wallet                  balance + aggregates + transactions\n  19 — Admin Wallets              top-up / adjustment / view any user wallet\n\nFRD references: Service Management §1.1, §1.2, §1.3, §2.1, §2.2, §2.3, §3.2, §3.4, §3.5 (financial), §1.4/§2.4/§3.13 (notifications).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -1253,6 +1253,149 @@
               "path": ["notifications", "read-all"]
             },
             "description": "Mark every unread notification for the caller as read. Returns { markedRead: N }."
+          }
+        }
+      ]
+    },
+    {
+      "name": "17 — Customer Wallet (FRD §1.1)",
+      "item": [
+        {
+          "name": "GET /customer/wallet (balance)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/customer/wallet",
+              "host": ["{{baseUrl}}"],
+              "path": ["customer", "wallet"]
+            },
+            "description": "Returns { balance, currency }. Top-ups happen via /admin/wallets (manual MVP) or PayTabs (Sprint 4+)."
+          }
+        },
+        {
+          "name": "GET /customer/wallet/transactions (ledger)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/customer/wallet/transactions?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["customer", "wallet", "transactions"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "type", "value": "TOPUP", "disabled": true, "description": "TOPUP | BOOKING_DEBIT | REFUND | BOOKING_CREDIT | COMMISSION_DEBIT | WITHDRAWAL | ADJUSTMENT_CREDIT | ADJUSTMENT_DEBIT" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "18 — SP Wallet (FRD §2.1)",
+      "item": [
+        {
+          "name": "GET /service-provider/wallet (balance + aggregates)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{spAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/service-provider/wallet",
+              "host": ["{{baseUrl}}"],
+              "path": ["service-provider", "wallet"]
+            },
+            "description": "Returns balance + lifetime aggregates: totalEarned (sum BOOKING_CREDIT), totalCommissions (sum COMMISSION_DEBIT), totalWithdrawn (sum WITHDRAWAL). The dashboard summary card."
+          }
+        },
+        {
+          "name": "GET /service-provider/wallet/transactions",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{spAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/service-provider/wallet/transactions?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["service-provider", "wallet", "transactions"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "type", "value": "BOOKING_CREDIT", "disabled": true }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "19 — Admin Wallets (FRD §3.5)",
+      "item": [
+        {
+          "name": "GET /admin/wallets/:userId (any user's wallet)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/admin/wallets/{{customerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "wallets", "{{customerId}}"]
+            }
+          }
+        },
+        {
+          "name": "GET /admin/wallets/:userId/transactions",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/admin/wallets/{{customerId}}/transactions?page=1&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "wallets", "{{customerId}}", "transactions"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "50" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /admin/wallets/:userId/topup (customer wallets only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/wallets/{{customerId}}/topup",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "wallets", "{{customerId}}", "topup"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 500,\n  \"note\": \"Manual top-up (cash received at office)\",\n  \"externalRef\": null\n}"
+            },
+            "description": "Admin manually credits a customer's wallet — used for MVP since PayTabs isn't wired yet. Fires a TOPUP_RECEIVED notification to the customer."
+          }
+        },
+        {
+          "name": "POST /admin/wallets/:userId/adjustment (CREDIT or DEBIT)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/wallets/{{spId}}/adjustment",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "wallets", "{{spId}}", "adjustment"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"direction\": \"DEBIT\",\n  \"amount\": 50,\n  \"note\": \"Dispute resolution — customer was overcharged on booking abc123\"\n}"
+            },
+            "description": "Manual adjustment to any user's wallet (CUSTOMER or SP). `note` is REQUIRED — it goes into the audit trail. Use this to push money to an SP (DEBIT impossible for customer if it would go negative)."
           }
         }
       ]

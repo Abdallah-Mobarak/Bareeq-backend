@@ -1,17 +1,28 @@
 const { prisma } = require('../../infrastructure/database/prisma');
 const { ApiError } = require('../../utils/ApiError');
 const { logger } = require('../../utils/logger');
+const walletService = require('../../services/wallet.service');
 
 /**
  * Customer-side booking flow — FRD §1.3.
  *
  * MVP restrictions:
- *   - paymentMethod = CASH only (WALLET + ONLINE arrive with Sprint 4
- *     payment integration). We let the request type WALLET/ONLINE
- *     parse cleanly but reject it at the service boundary so the
- *     mistake is obvious.
+ *   - paymentMethod = CASH | WALLET supported. ONLINE (PayTabs) lands
+ *     with Sprint 4+ external-payment integration.
  *   - Cancel allowed ONLY while PENDING (after an SP accepts, the
  *     SP has started scheduling — we don't unilaterally cancel).
+ *
+ * WALLET semantics (commits before the SP is even known):
+ *   - On CREATE: validate balance >= totalCost; insert booking +
+ *     BOOKING_DEBIT in the same transaction. The customer's wallet
+ *     is locked immediately so they can't double-spend the same
+ *     funds across multiple PENDING bookings.
+ *   - On CANCEL of a WALLET booking: REFUND back to the customer in
+ *     the same transaction. PENDING-only cancellation guarantees the
+ *     SP never started work for that money.
+ *   - On COMPLETE (handled in service-provider-bookings): credit the
+ *     SP (BOOKING_CREDIT for totalCost) and immediately debit the
+ *     platform commission (COMMISSION_DEBIT) — net = SP earnings.
  */
 
 // Money fields always serialise to fixed 2-decimal strings. Prisma's
@@ -68,11 +79,9 @@ const serialize = (b) => ({
 });
 
 const createBooking = async (customerId, data) => {
-  // MVP gate: only CASH is wired
-  if (data.paymentMethod !== 'CASH') {
-    throw ApiError.badRequest(
-      'Only CASH payment is supported in this release; WALLET and ONLINE arrive with the payment integration',
-    );
+  // ONLINE / PayTabs lands in a separate sprint — block it cleanly.
+  if (data.paymentMethod === 'ONLINE') {
+    throw ApiError.badRequest('Online payment is not yet available. Use CASH or WALLET.');
   }
 
   // Validate service exists, is active, and load its commissionRate
@@ -109,6 +118,10 @@ const createBooking = async (customerId, data) => {
         scheduledDate: new Date(data.scheduledDate),
         totalCost,
         paymentMethod: data.paymentMethod,
+        // WALLET bookings flip to PAID immediately (the customer's wallet
+        // is being debited inside this same transaction). CASH stays
+        // PENDING until the SP completes + collects cash.
+        ...(data.paymentMethod === 'WALLET' && { paymentStatus: 'PAID' }),
       },
     });
     await tx.bookingSubcategory.createMany({
@@ -120,6 +133,20 @@ const createBooking = async (customerId, data) => {
         cost: s.cost,
       })),
     });
+
+    // For WALLET bookings, debit the customer NOW. If they're broke,
+    // applyTransaction throws 400 "Insufficient wallet balance" and
+    // the whole transaction (booking + subcategories) rolls back.
+    if (data.paymentMethod === 'WALLET') {
+      await walletService.applyTransaction(tx, {
+        userId: customerId,
+        type: 'BOOKING_DEBIT',
+        amount: totalCost,
+        bookingId: booking.id,
+        note: `Payment for booking ${booking.id.slice(0, 8)}`,
+      });
+    }
+
     return tx.booking.findUnique({
       where: { id: booking.id },
       include: {
@@ -130,7 +157,10 @@ const createBooking = async (customerId, data) => {
     });
   });
 
-  logger.info({ bookingId: created.id, customerId, totalCost }, 'Booking created (PENDING)');
+  logger.info(
+    { bookingId: created.id, customerId, totalCost, paymentMethod: data.paymentMethod },
+    'Booking created (PENDING)',
+  );
   return serialize(created);
 };
 
@@ -194,21 +224,46 @@ const cancelMine = async (customerId, bookingId, { reason }) => {
     );
   }
 
-  const updated = await prisma.booking.update({
-    where: { id: bookingId },
-    data: {
-      status: 'CANCELLED',
-      cancelledAt: new Date(),
-      cancellationReason: reason,
-    },
-    include: {
-      service: true,
-      assignedSp: { select: { id: true, nameAr: true, nameEn: true, phone: true } },
-      selectedSubcategories: { orderBy: { createdAt: 'asc' } },
-    },
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.booking.update({
+      where: { id: bookingId },
+      data: {
+        status: 'CANCELLED',
+        cancelledAt: new Date(),
+        cancellationReason: reason,
+        // WALLET bookings flip back to REFUNDED so the ledger story
+        // is consistent ("paid → refunded"). CASH bookings never
+        // moved money, so paymentStatus stays PENDING.
+        ...(b.paymentMethod === 'WALLET' && { paymentStatus: 'REFUNDED' }),
+      },
+    });
+
+    // Refund the customer's wallet for WALLET bookings. Same
+    // transaction so cancel + refund commit together or not at all.
+    if (b.paymentMethod === 'WALLET') {
+      await walletService.applyTransaction(tx, {
+        userId: customerId,
+        type: 'REFUND',
+        amount: b.totalCost,
+        bookingId: row.id,
+        note: `Refund for cancelled booking ${row.id.slice(0, 8)}`,
+      });
+    }
+
+    return tx.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        service: true,
+        assignedSp: { select: { id: true, nameAr: true, nameEn: true, phone: true } },
+        selectedSubcategories: { orderBy: { createdAt: 'asc' } },
+      },
+    });
   });
 
-  logger.info({ bookingId, customerId, reason }, 'Booking cancelled by customer');
+  logger.info(
+    { bookingId, customerId, reason, paymentMethod: b.paymentMethod },
+    'Booking cancelled by customer',
+  );
   return serialize(updated);
 };
 

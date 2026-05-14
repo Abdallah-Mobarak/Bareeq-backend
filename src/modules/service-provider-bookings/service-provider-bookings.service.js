@@ -2,6 +2,7 @@ const { prisma } = require('../../infrastructure/database/prisma');
 const { ApiError } = require('../../utils/ApiError');
 const { logger } = require('../../utils/logger');
 const { notify } = require('../notifications/notifications.service');
+const walletService = require('../../services/wallet.service');
 
 /**
  * Service Provider booking flow — FRD §2.2 + §2.3.
@@ -289,25 +290,57 @@ const completeBooking = async (spUserId, bookingId) => {
     );
   }
 
-  // For CASH bookings, completion = payment received (Sprint 4 WALLET/
-  // ONLINE flows will mark PAID at charge time instead).
-  const isPaidNow = b.paymentMethod === 'CASH';
+  // CASH bookings: customer paid in person → mark PAID on completion.
+  // WALLET bookings: customer was already debited at create-time
+  // (paymentStatus is already PAID) → we now credit the SP + debit
+  // commission from the same wallet.
+  const isCash = b.paymentMethod === 'CASH';
+  const isWallet = b.paymentMethod === 'WALLET';
 
-  const updated = await prisma.booking.update({
-    where: { id: bookingId },
-    data: {
-      status: 'COMPLETED',
-      completedAt: new Date(),
-      ...(isPaidNow && { paymentStatus: 'PAID' }),
-    },
-    include: {
-      service: true,
-      customer: { select: { id: true, nameAr: true, nameEn: true, phone: true } },
-      selectedSubcategories: { orderBy: { createdAt: 'asc' } },
-    },
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.booking.update({
+      where: { id: bookingId },
+      data: {
+        status: 'COMPLETED',
+        completedAt: new Date(),
+        ...(isCash && { paymentStatus: 'PAID' }),
+      },
+    });
+
+    // For WALLET bookings, settle the SP earnings + platform commission
+    // atomically with the completion. We credit gross then debit
+    // commission so the SP's ledger shows the full picture:
+    //   "Earned 500", "Commission 50 (10%)" → net 450 in wallet.
+    if (isWallet) {
+      await walletService.applyTransaction(tx, {
+        userId: spUserId,
+        type: 'BOOKING_CREDIT',
+        amount: row.totalCost,
+        bookingId,
+        note: `Earnings (gross) from booking ${bookingId.slice(0, 8)}`,
+      });
+      if (row.commissionAmount && Number(row.commissionAmount) > 0) {
+        await walletService.applyTransaction(tx, {
+          userId: spUserId,
+          type: 'COMMISSION_DEBIT',
+          amount: row.commissionAmount,
+          bookingId,
+          note: `Platform commission ${row.commissionRate}% on booking ${bookingId.slice(0, 8)}`,
+        });
+      }
+    }
+
+    return tx.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        service: true,
+        customer: { select: { id: true, nameAr: true, nameEn: true, phone: true } },
+        selectedSubcategories: { orderBy: { createdAt: 'asc' } },
+      },
+    });
   });
   logger.info(
-    { bookingId, spUserId, paymentStatus: updated.paymentStatus },
+    { bookingId, spUserId, paymentMethod: b.paymentMethod, paymentStatus: updated.paymentStatus },
     'Booking completed (IN_PROGRESS → COMPLETED)',
   );
 
