@@ -267,6 +267,10 @@ model User {
   withdrawalRequests         WithdrawalRequest[] @relation("WithdrawalSp")
   withdrawalRequestsReviewed WithdrawalRequest[] @relation("WithdrawalAdmin")
 
+  // Admin-sent broadcast notifications — one row per "send" event,
+  // separate from the per-user `notifications` fan-out.
+  notificationBroadcastsSent NotificationBroadcast[] @relation("BroadcastSentByAdmin")
+
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
@@ -1487,13 +1491,62 @@ model Notification {
   /// NULL until the recipient marks it read.
   readAt DateTime? @map("read_at")
 
+  /// Set when this notification was fanned out from an admin broadcast
+  /// (FRD §4.14 / §3.6 marketplace). NULL for event-driven notifications
+  /// (booking, kyc, etc.). SetNull on broadcast delete so the user's
+  /// inbox row survives even if the admin removes the broadcast.
+  broadcastId String?                @map("broadcast_id")
+  broadcast   NotificationBroadcast? @relation(fields: [broadcastId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now()) @map("created_at")
 
   /// Hot path: list mine ordered by newest, optionally filtered to
   /// unread. The (userId, readAt) order matches both queries.
   @@index([userId, readAt])
   @@index([userId, createdAt])
+  @@index([broadcastId])
   @@map("notifications")
+}
+
+/// One row per admin "send broadcast" event. Represents the admin's
+/// intent — title, body, audience — separate from the per-user
+/// Notification rows that get fanned out at send time.
+///
+/// Why a separate model rather than grouping notifications by
+/// (createdAt, title): the admin needs to view / delete the broadcast
+/// as a single unit (FRD §3.6 marketplace, §4.14 mgmt). Grouping by
+/// fuzzy fields breaks when notifications get edited / partially
+/// deleted / land at different timestamps in a busy send.
+model NotificationBroadcast {
+  id            String @id @default(cuid())
+  sentByAdminId String @map("sent_by_admin_id")
+  sentByAdmin   User   @relation("BroadcastSentByAdmin", fields: [sentByAdminId], references: [id])
+
+  titleAr String  @map("title_ar")
+  titleEn String? @map("title_en")
+  bodyAr  String  @map("body_ar")
+  bodyEn  String? @map("body_en")
+
+  /// Frozen snapshot of the audience the admin selected at send time.
+  /// Shape: { kind: 'ALL' } | { kind: 'ROLES', roles: SystemRole[] } |
+  /// { kind: 'USERS', userIds: string[] }.
+  /// Stored even though we also write Notification rows so audit /
+  /// "view who got it" survives later user deletions.
+  audience Json
+
+  /// Count of Notification rows we successfully wrote at send time.
+  /// Lets the admin see "delivered to N users" without a JOIN.
+  recipientCount Int @map("recipient_count")
+
+  notifications Notification[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([sentByAdminId])
+  @@index([deletedAt])
+  @@map("notification_broadcasts")
 }
 
 // ============================================
