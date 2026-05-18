@@ -19,6 +19,12 @@ const router = Router();
 
 router.use(requireAuth, requireRole('SUPERVISOR'));
 
+router.get(
+  '/:id',
+  validate(idParamSchema, 'params'),
+  controller.getOne,
+);
+
 router.post(
   '/:id/start',
   validate(idParamSchema, 'params'),

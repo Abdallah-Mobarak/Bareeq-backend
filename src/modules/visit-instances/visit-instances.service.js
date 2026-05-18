@@ -132,6 +132,17 @@ const serialize = (i) => ({
 });
 
 /**
+ * GET /visit-instances/:id
+ * Read a single visit instance the supervisor owns. Same shape as
+ * what the action endpoints return, so the mobile app can refresh
+ * one row without re-fetching the whole branch detail.
+ */
+const getVisit = async (visitInstanceId, supervisorId) => {
+  const inst = await loadOwned(visitInstanceId, supervisorId);
+  return serialize(inst);
+};
+
+/**
  * POST /visit-instances/:id/start
  * REMAINING → UNDERWAY. Records GPS + start time. Snapshots the
  * branch's required tasks for this V into VisitInstanceTaskCheck so
@@ -425,6 +436,7 @@ const deletePhoto = async (visitInstanceId, photoId, supervisorId) => {
 };
 
 module.exports = {
+  getVisit,
   startVisit,
   finalClosedVisit,
   notImplementedVisit,

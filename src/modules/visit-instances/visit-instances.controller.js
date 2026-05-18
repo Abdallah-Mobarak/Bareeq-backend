@@ -1,6 +1,11 @@
 const { asyncHandler } = require('../../utils/asyncHandler');
 const service = require('./visit-instances.service');
 
+const getOne = asyncHandler(async (req, res) => {
+  const data = await service.getVisit(req.params.id, req.user.id);
+  res.json({ success: true, data });
+});
+
 const start = asyncHandler(async (req, res) => {
   const data = await service.startVisit(req.params.id, req.user.id, req.body);
   res.json({ success: true, data });
@@ -46,6 +51,7 @@ const removePhoto = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
+  getOne,
   start,
   finalClosed,
   notImplemented,
