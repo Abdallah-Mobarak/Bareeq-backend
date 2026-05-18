@@ -1,5 +1,7 @@
 const Joi = require('joi');
 
+const { idsListSchema } = require('../../utils/validation');
+
 const idParamSchema = Joi.object({
   id: Joi.string().trim().min(1).max(40).required(),
 });
@@ -70,6 +72,8 @@ const listClientsQuerySchema = Joi.object({
 
   dateFrom: Joi.date().iso().optional(),
   dateTo: Joi.date().iso().optional(),
+
+  ids: idsListSchema,
 });
 
 module.exports = {

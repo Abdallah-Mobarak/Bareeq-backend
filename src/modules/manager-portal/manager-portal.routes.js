@@ -61,6 +61,24 @@ router.get(
 );
 
 /**
+ * Teams export — FRD §3.2.4.
+ * `?ids=` accepts the opaque row ids returned by /teams; omitting it
+ * exports the full filtered list.
+ */
+router.get(
+  '/teams/export.xlsx',
+  requirePermission('EXPORT_TEAMS'),
+  validate(listTeamsQuerySchema, 'query'),
+  controller.exportTeamsXlsx,
+);
+router.get(
+  '/teams/export.pdf',
+  requirePermission('EXPORT_TEAMS'),
+  validate(listTeamsQuerySchema, 'query'),
+  controller.exportTeamsPdf,
+);
+
+/**
  * Implemented Branches Management — FRD §3.5.
  * Export routes MUST come BEFORE /branches/:id to avoid Express
  * matching `:id = "export.xlsx"`.

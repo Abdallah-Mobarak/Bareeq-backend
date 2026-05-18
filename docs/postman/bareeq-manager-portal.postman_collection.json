@@ -153,6 +153,82 @@
             },
             "description": "Filters compose — all are AND-ed together at the DB layer."
           }
+        },
+        {
+          "name": "GET /manager/teams (capture first row id for export)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success && j.data?.rows?.[0]) {",
+                  "  pm.environment.set('teamRowId', j.data.rows[0].id);",
+                  "  console.log('✅ stashed teamRowId:', j.data.rows[0].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/teams",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "teams"]
+            },
+            "description": "Run this once to capture {{teamRowId}}, then use the single-row export requests below."
+          }
+        },
+        {
+          "name": "GET /manager/teams/export.xlsx (all rows — FRD §3.2.4)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/teams/export.xlsx",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "teams", "export.xlsx"]
+            },
+            "description": "Exports the full filtered list (current month by default). Pass the same filter query params as /teams to scope the export."
+          }
+        },
+        {
+          "name": "GET /manager/teams/export.pdf (all rows)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/teams/export.pdf",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "teams", "export.pdf"]
+            }
+          }
+        },
+        {
+          "name": "GET /manager/teams/export.xlsx?ids=… (single row)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/teams/export.xlsx?ids={{teamRowId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "teams", "export.xlsx"],
+              "query": [{ "key": "ids", "value": "{{teamRowId}}" }]
+            },
+            "description": "Export only the row whose id matches {{teamRowId}}. The id is the opaque base64 key emitted by GET /manager/teams."
+          }
+        },
+        {
+          "name": "GET /manager/teams/export.pdf?ids=a,b (multiple rows)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/teams/export.pdf?ids={{teamRowId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "teams", "export.pdf"],
+              "query": [{ "key": "ids", "value": "{{teamRowId}}" }]
+            },
+            "description": "Pass comma-separated ids (e.g. ?ids=abc,def,ghi) or repeated ?ids[]= params to export an arbitrary subset."
+          }
         }
       ]
     },
@@ -929,8 +1005,42 @@
     },
 
     {
+      "name": "10b — Service Types (FRD §3.10 / §4.11.2)",
+      "description": "Read-only catalog of admin-managed service types. Used to populate the dropdown when creating or editing a Representative agreement. The admin owns the canonical hourlyRate on each row.",
+      "item": [
+        {
+          "name": "GET /manager/service-types",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.success && Array.isArray(j.data?.items) && j.data.items.length > 0) {",
+                  "  pm.environment.set('serviceTypeId', j.data.items[0].id);",
+                  "  console.log('✅ first serviceTypeId:', j.data.items[0].id, '— hourlyRate:', j.data.items[0].hourlyRate);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/manager/service-types",
+              "host": ["{{baseUrl}}"],
+              "path": ["manager", "service-types"]
+            },
+            "description": "Returns all active service types (no pagination — the catalog is small). Auto-captures the first id into {{serviceTypeId}} for the Representatives POST below."
+          }
+        }
+      ]
+    },
+
+    {
       "name": "11 — Representatives (FRD §3.10)",
-      "description": "Prerequisite: run 'npm run prisma:migrate' once so the representatives table exists. Price is computed server-side from hourlyRate × numberOfWorkers × numberOfHours — never trusted from the client.",
+      "description": "Prerequisite: run 'npm run prisma:migrate' and seed at least one ServiceType via the admin Service Types endpoints. Price is computed server-side from ServiceType.hourlyRate × numberOfWorkers × numberOfHours — never trusted from the client.",
       "item": [
         {
           "name": "POST /manager/representatives (price auto-computed)",
@@ -959,26 +1069,9 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"clientName\": \"Lulu Hypermarket\",\n  \"serviceType\": \"Mystery Shopper\",\n  \"hourlyRate\": 50,\n  \"numberOfWorkers\": 3,\n  \"numberOfHours\": 8,\n  \"dateOfAgreement\": \"2026-05-12\",\n  \"customerPhoneNumber\": \"+966500111222\"\n}"
+              "raw": "{\n  \"clientName\": \"Lulu Hypermarket\",\n  \"serviceTypeId\": \"{{serviceTypeId}}\",\n  \"numberOfWorkers\": 3,\n  \"numberOfHours\": 8,\n  \"dateOfAgreement\": \"2026-05-12\",\n  \"customerPhoneNumber\": \"+966500111222\"\n}"
             },
-            "description": "FRD §3.10.2 — price MUST be computed server-side. Body above yields price = 50 × 3 × 8 = 1200 SAR."
-          }
-        },
-        {
-          "name": "POST /manager/representatives (try to spoof price — server ignores it)",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": {
-              "raw": "{{baseUrl}}/manager/representatives",
-              "host": ["{{baseUrl}}"],
-              "path": ["manager", "representatives"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"clientName\": \"Test\",\n  \"serviceType\": \"X\",\n  \"hourlyRate\": 100,\n  \"numberOfWorkers\": 2,\n  \"numberOfHours\": 4,\n  \"dateOfAgreement\": \"2026-05-12\",\n  \"price\": 1\n}"
-            },
-            "description": "The body sends price=1, but the server recomputes from inputs: 100 × 2 × 4 = 800. This is the security boundary."
+            "description": "FRD §3.10.2 — price MUST be computed server-side. The server reads ServiceType.hourlyRate from the FK and returns price = hourlyRate × numberOfWorkers × numberOfHours.\n\nRun the GET /manager/service-types request first to populate {{serviceTypeId}}."
           }
         },
         {
@@ -1032,7 +1125,7 @@
               "mode": "raw",
               "raw": "{\n  \"numberOfWorkers\": 5\n}"
             },
-            "description": "Changing any of (hourlyRate, numberOfWorkers, numberOfHours) recomputes price using the merged inputs. Other fields stay as-is — no need to resend everything."
+            "description": "Changing any of (serviceTypeId, numberOfWorkers, numberOfHours) recomputes price using the merged inputs. The server reads ServiceType.hourlyRate from the FK at recompute time. Other fields stay as-is."
           }
         },
         {

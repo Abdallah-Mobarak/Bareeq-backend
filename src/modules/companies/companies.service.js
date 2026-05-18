@@ -88,9 +88,10 @@ const listCompanies = async ({ page, limit, q, sort }) => {
  * up the worker if `q` is empty on a huge tenant; if anyone hits it
  * we'll switch to streaming.
  */
-const listAllCompaniesForExport = async ({ q, sort } = {}) => {
+const listAllCompaniesForExport = async ({ q, ids, sort } = {}) => {
   const where = {
     deletedAt: null,
+    ...(ids && ids.length > 0 && { id: { in: ids } }),
     ...(q && {
       OR: [
         { nameAr: { contains: q, mode: 'insensitive' } },

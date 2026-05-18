@@ -237,10 +237,18 @@ const buildBranchesWhere = ({ scope, query }) => {
     year,
     month,
     visitStatus,
+    ids,
   } = query;
 
   const where = {
     deletedAt: null,
+    /**
+     * `ids` ANDs on top of the role scope — an AM passing a branch id
+     * outside their assignment simply gets an empty intersection, never
+     * a leak. Safe because the regionScheduling sub-clause below still
+     * carries the scope.
+     */
+    ...(ids && ids.length > 0 && { id: { in: ids } }),
     monthlySchedule: {
       deletedAt: null,
       ...(year !== undefined && { year }),

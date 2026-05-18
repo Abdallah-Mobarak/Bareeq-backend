@@ -75,10 +75,11 @@ const listSupervisors = async ({ page, limit, q, status, sort }) => {
   };
 };
 
-const listAllSupervisorsForExport = async ({ q, status, sort } = {}) => {
+const listAllSupervisorsForExport = async ({ q, status, ids, sort } = {}) => {
   const where = {
     role: 'SUPERVISOR',
     deletedAt: null,
+    ...(ids && ids.length > 0 && { id: { in: ids } }),
     ...(q && {
       OR: [
         { nameAr: { contains: q, mode: 'insensitive' } },

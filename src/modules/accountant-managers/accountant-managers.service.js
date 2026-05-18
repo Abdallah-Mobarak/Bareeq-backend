@@ -285,11 +285,13 @@ const listAllAccountantManagersForExport = async ({
   companyId,
   status,
   assignedToAllBranches,
+  ids,
   sort,
 } = {}) => {
   const where = {
     role: 'ACCOUNTANT_MANAGER',
     deletedAt: null,
+    ...(ids && ids.length > 0 && { id: { in: ids } }),
     ...(q && {
       OR: [
         { nameAr: { contains: q, mode: 'insensitive' } },

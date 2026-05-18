@@ -1,5 +1,7 @@
 const Joi = require('joi');
 
+const { idsListSchema } = require('../../utils/validation');
+
 /**
  * Required tasks for a region scheduling row, grouped by visit type.
  * `visitType` 1..4 must align with the parent's `numberOfVisits`
@@ -48,27 +50,6 @@ const updateSchema = Joi.object({
   code: Joi.string().trim().max(50).optional().allow(null, ''),
   requiredTasks: Joi.array().items(requiredTaskSchema).max(50).optional(),
 }).min(1);
-
-/**
- * Accept `ids` either as a comma-separated string OR as a repeated
- * query param. Both shapes normalise to `string[]`. Empty / blank
- * entries are stripped.
- *
- * Examples:
- *   ?ids=abc,def,ghi
- *   ?ids[]=abc&ids[]=def&ids[]=ghi
- */
-const idsListSchema = Joi.alternatives()
-  .try(
-    Joi.array().items(Joi.string().trim().min(1)).max(500),
-    Joi.string().custom((value) =>
-      value
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean),
-    ),
-  )
-  .optional();
 
 /**
  * GET /region-schedulings — query string.

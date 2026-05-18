@@ -123,10 +123,11 @@ const listAdmins = async ({ page, limit, q, status, permissionRoleId, sort }) =>
   };
 };
 
-const listAllAdminsForExport = async ({ q, status, permissionRoleId, sort } = {}) => {
+const listAllAdminsForExport = async ({ q, status, permissionRoleId, ids, sort } = {}) => {
   const where = {
     role: 'ADMIN',
     deletedAt: null,
+    ...(ids && ids.length > 0 && { id: { in: ids } }),
     ...(q && {
       OR: [
         { nameAr: { contains: q, mode: 'insensitive' } },

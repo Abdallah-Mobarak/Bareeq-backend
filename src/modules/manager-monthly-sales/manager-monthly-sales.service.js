@@ -53,6 +53,7 @@ const createClient = async (managerId, body) => {
 const buildWhere = (q) => {
   const where = { deletedAt: null };
 
+  if (q.ids && q.ids.length > 0) where.id = { in: q.ids };
   if (q.name) where.name = { contains: q.name, mode: 'insensitive' };
   if (q.contractType) where.contractType = { contains: q.contractType, mode: 'insensitive' };
   if (q.statement) where.statement = { contains: q.statement, mode: 'insensitive' };

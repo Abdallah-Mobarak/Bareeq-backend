@@ -58,6 +58,24 @@ const REPORT_BY_COMPANY_EXPORT_COLUMNS = [
   { header: 'Undocumented', key: 'undocumented', width: 14 },
 ];
 
+const TEAMS_EXPORT_COLUMNS = [
+  { header: 'Supervisor (AR)', key: (r) => r.supervisor?.nameAr, width: 22 },
+  { header: 'Supervisor (EN)', key: (r) => r.supervisor?.nameEn, width: 22 },
+  { header: 'Email', key: (r) => r.supervisor?.email, width: 24 },
+  { header: 'Phone', key: (r) => r.supervisor?.phone, width: 18 },
+  { header: 'Company', key: 'companyName', width: 26 },
+  { header: 'Cities', key: (r) => (r.cities || []).join(', '), width: 22 },
+  { header: 'Regions', key: (r) => (r.regions || []).join(', '), width: 22 },
+  { header: '#Branches', key: 'totalBranches', width: 10 },
+  { header: 'Total Visits', key: 'totalVisits', width: 12 },
+  { header: 'Implemented', key: 'implemented', width: 12 },
+  { header: 'Remaining', key: 'remaining', width: 10 },
+  { header: 'Not Implemented', key: 'notImplemented', width: 16 },
+  { header: 'Final Closed', key: 'finalClosed', width: 12 },
+  { header: 'Documented', key: 'documented', width: 12 },
+  { header: 'Undocumented', key: 'undocumented', width: 14 },
+];
+
 const BRANCHES_EXPORT_COLUMNS = [
   { header: 'Company', key: 'companyName', width: 24 },
   { header: 'Brand', key: 'brandName', width: 30 },
@@ -89,6 +107,43 @@ const myProfile = asyncHandler(async (req, res) => {
 const listTeams = asyncHandler(async (req, res) => {
   const data = await service.listTeams(req.validatedQuery || {});
   res.json({ success: true, data });
+});
+
+/**
+ * GET /manager/teams/export.xlsx — FRD §3.2.4.
+ * Supports `?ids=` to export a single row, multiple rows, or omit to
+ * export the full filtered list.
+ */
+const exportTeamsXlsx = asyncHandler(async (req, res) => {
+  const data = await service.listTeamsForExport(req.validatedQuery || {});
+  const buffer = await buildExcel({
+    sheetName: `Teams ${data.year}-${String(data.month).padStart(2, '0')}`,
+    columns: TEAMS_EXPORT_COLUMNS,
+    rows: data.rows,
+  });
+  xlsxResponse(
+    res,
+    buffer,
+    `manager-teams-${data.year}-${String(data.month).padStart(2, '0')}.xlsx`,
+  );
+});
+
+/**
+ * GET /manager/teams/export.pdf — FRD §3.2.4.
+ */
+const exportTeamsPdf = asyncHandler(async (req, res) => {
+  const data = await service.listTeamsForExport(req.validatedQuery || {});
+  const buffer = await buildPdf({
+    title: `Teams — ${data.year}-${String(data.month).padStart(2, '0')}`,
+    subtitle: `Rows: ${data.rowCount}`,
+    columns: TEAMS_EXPORT_COLUMNS,
+    rows: data.rows,
+  });
+  pdfResponse(
+    res,
+    buffer,
+    `manager-teams-${data.year}-${String(data.month).padStart(2, '0')}.pdf`,
+  );
 });
 
 /**
@@ -336,6 +391,8 @@ const exportAdditionalTasksPdf = asyncHandler(async (req, res) => {
 module.exports = {
   myProfile,
   listTeams,
+  exportTeamsXlsx,
+  exportTeamsPdf,
   listBranches,
   branchDetail,
   exportBranchesXlsx,

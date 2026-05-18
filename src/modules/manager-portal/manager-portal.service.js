@@ -199,9 +199,12 @@ const listTeams = async (rawQuery) => {
 
   /**
    * Finalise rows: replace the Sets with arrays/lengths the frontend
-   * can consume directly, and drop the temporary `key`.
+   * can consume directly, and drop the temporary `key`. Each row gets
+   * a stable opaque `id` (base64 of supervisorId + companyName) so the
+   * export endpoint can target specific rows via ?ids=.
    */
   const rows = Array.from(teams.values()).map((row) => ({
+    id: Buffer.from(row.key).toString('base64url'),
     supervisor: row.supervisor,
     companyName: row.companyName,
     cities: Array.from(row.cities).sort(),
@@ -228,6 +231,21 @@ const listTeams = async (rawQuery) => {
     rowCount: rows.length,
     rows,
   };
+};
+
+/**
+ * GET /manager/teams/export.{xlsx,pdf} — FRD §3.2.4.
+ *
+ * Same shape as listTeams, with an optional `ids` filter applied on top.
+ * `ids` lets the frontend export "this specific row", "these N rows",
+ * or omit ids entirely to export the full filtered list.
+ */
+const listTeamsForExport = async (rawQuery) => {
+  const { ids, ...filters } = rawQuery;
+  const { year, month, rows } = await listTeams(filters);
+  const filtered =
+    ids && ids.length > 0 ? rows.filter((r) => ids.includes(r.id)) : rows;
+  return { year, month, rowCount: filtered.length, rows: filtered };
 };
 
 /**
@@ -311,10 +329,12 @@ const buildBranchesWhere = (query) => {
     dateTo,
     year,
     month,
+    ids,
   } = query;
 
   const where = {
     deletedAt: null,
+    ...(ids && ids.length > 0 && { id: { in: ids } }),
     monthlySchedule: {
       deletedAt: null,
       ...(year !== undefined && { year }),
@@ -959,7 +979,7 @@ const endOfTodayUTC = () => {
 
 const ymdUTC = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
 
-const listDailyVisits = async ({ supervisorName, startDate, endDate }) => {
+const listDailyVisits = async ({ supervisorName, startDate, endDate, ids }) => {
   const sd = startDate ? new Date(startDate) : firstOfCurrentMonthUTC();
   const ed = endDate ? new Date(endDate) : endOfTodayUTC();
 
@@ -974,6 +994,7 @@ const listDailyVisits = async ({ supervisorName, startDate, endDate }) => {
           supervisor: {
             deletedAt: null,
             role: 'SUPERVISOR',
+            ...(ids && ids.length > 0 && { id: { in: ids } }),
             ...(supervisorName && {
               OR: [
                 { nameAr: { contains: supervisorName, mode: 'insensitive' } },
@@ -1381,6 +1402,7 @@ const createAdditionalTask = async (managerId, body) => {
 const buildAdditionalTasksWhere = (q) => {
   const where = { deletedAt: null };
 
+  if (q.ids && q.ids.length > 0) where.id = { in: q.ids };
   if (q.supervisorId) where.supervisorId = q.supervisorId;
   if (q.companyName) where.companyName = { contains: q.companyName, mode: 'insensitive' };
   if (q.branchName) where.branchName = { contains: q.branchName, mode: 'insensitive' };
@@ -1557,6 +1579,7 @@ const listAdditionalTasksForExport = async (rawQuery) => {
 module.exports = {
   getMyProfile,
   listTeams,
+  listTeamsForExport,
   listBranches,
   getBranchDetail,
   listBranchesForExport,

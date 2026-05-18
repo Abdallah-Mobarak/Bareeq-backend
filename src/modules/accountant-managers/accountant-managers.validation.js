@@ -1,5 +1,7 @@
 const Joi = require('joi');
 
+const { idsListSchema } = require('../../utils/validation');
+
 const phoneSchema = Joi.string()
   .trim()
   .min(9)
@@ -55,6 +57,7 @@ const listQuerySchema = Joi.object({
   companyId: Joi.string().optional().allow(''),
   status: Joi.string().valid('ENABLED', 'BLOCKED').optional(),
   assignedToAllBranches: Joi.boolean().optional(),
+  ids: idsListSchema,
   sort: Joi.string().valid('newest', 'oldest').default('newest'),
 });
 

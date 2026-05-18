@@ -1,5 +1,7 @@
 const Joi = require('joi');
 
+const { idsListSchema } = require('../../utils/validation');
+
 /**
  * URL param schema reused by every /company/branches/:id route.
  * cuid is 25 chars; we allow 1–40 to keep the door open for future
@@ -55,6 +57,14 @@ const listBranchesQuerySchema = Joi.object({
   visitStatus: Joi.string()
     .valid('REMAINING', 'UNDERWAY', 'IMPLEMENTED', 'NOT_IMPLEMENTED', 'FINAL_CLOSED', 'NO_ACTION')
     .optional(),
+
+  /**
+   * Row selection for /branches/export.* — `id` here is the
+   * ScheduledVisit id (matches what /company/branches returns per row).
+   * The role-based scope still applies on top, so an AM can't smuggle
+   * a foreign-company id through.
+   */
+  ids: idsListSchema,
 });
 
 /**

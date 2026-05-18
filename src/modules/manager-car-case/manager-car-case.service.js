@@ -64,6 +64,7 @@ const createCarCase = async (managerId, body) => {
 const buildWhere = (q) => {
   const where = { deletedAt: null };
 
+  if (q.ids && q.ids.length > 0) where.id = { in: q.ids };
   if (q.supervisorId) where.supervisorId = q.supervisorId;
   if (q.area) where.area = { contains: q.area, mode: 'insensitive' };
   if (q.licensePlate) where.licensePlate = { contains: q.licensePlate, mode: 'insensitive' };

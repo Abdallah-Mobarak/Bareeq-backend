@@ -1,5 +1,7 @@
 const Joi = require('joi');
 
+const { idsListSchema } = require('../../utils/validation');
+
 /**
  * GET /manager/teams query schema — FRD §3.2.2 (search) + §3.2.3 (filters).
  *
@@ -21,6 +23,15 @@ const listTeamsQuerySchema = Joi.object({
 
   year: Joi.number().integer().min(2024).max(2100).optional(),
   month: Joi.number().integer().min(1).max(12).optional(),
+
+  /**
+   * Row selection for /teams/export.* — `id` here is the opaque base64
+   * key the list endpoint emits per row (a composite of supervisorId +
+   * companyName, since a team is identified by both, not by either
+   * alone). The export endpoint filters the computed list to only the
+   * passed ids, on top of the existing filters.
+   */
+  ids: idsListSchema,
 });
 
 /**
@@ -56,6 +67,12 @@ const listBranchesQuerySchema = Joi.object({
 
   year: Joi.number().integer().min(2024).max(2100).optional(),
   month: Joi.number().integer().min(1).max(12).optional(),
+
+  /**
+   * Row selection for /branches/export.* — `id` here is the
+   * ScheduledVisit id (matches the row id surfaced by /manager/branches).
+   */
+  ids: idsListSchema,
 });
 
 /**
@@ -92,6 +109,11 @@ const listDailyVisitsQuerySchema = Joi.object({
   supervisorName: Joi.string().trim().max(100).optional(),
   startDate: Joi.date().iso().optional(),
   endDate: Joi.date().iso().optional(),
+  /**
+   * Row selection for /daily-visits/export.* — each row is a supervisor,
+   * so `ids` are supervisor user ids.
+   */
+  ids: idsListSchema,
 });
 
 /**
@@ -173,6 +195,12 @@ const listAdditionalTasksQuerySchema = Joi.object({
 
   dateFrom: Joi.date().iso().optional(),
   dateTo: Joi.date().iso().optional(),
+
+  /**
+   * Row selection for /additional-tasks/export.* — `id` is the
+   * AdditionalTask id.
+   */
+  ids: idsListSchema,
 });
 
 module.exports = {

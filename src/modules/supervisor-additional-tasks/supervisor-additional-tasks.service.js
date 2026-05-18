@@ -72,6 +72,11 @@ const loadOwned = async (taskId, supervisorId, tx = prisma) => {
 const buildWhere = (supervisorId, q) => {
   const where = { supervisorId, deletedAt: null };
 
+  /**
+   * `ids` ANDs with `supervisorId`, so passing another supervisor's
+   * task id matches zero rows — no leak possible.
+   */
+  if (q.ids && q.ids.length > 0) where.id = { in: q.ids };
   if (q.companyName) where.companyName = { contains: q.companyName, mode: 'insensitive' };
   if (q.branchName) where.branchName = { contains: q.branchName, mode: 'insensitive' };
   if (q.brandName) {

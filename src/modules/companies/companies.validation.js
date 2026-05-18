@@ -1,5 +1,7 @@
 const Joi = require('joi');
 
+const { idsListSchema } = require('../../utils/validation');
+
 const phoneSchema = Joi.string()
   .trim()
   .min(9)
@@ -41,6 +43,7 @@ const listCompaniesQuerySchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(20),
   q: Joi.string().trim().max(100).optional().allow(''),
+  ids: idsListSchema,
   sort: Joi.string().valid('newest', 'oldest', 'name').default('newest'),
 });
 

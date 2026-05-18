@@ -1,5 +1,7 @@
 const Joi = require('joi');
 
+const { idsListSchema } = require('../../utils/validation');
+
 const phoneSchema = Joi.string()
   .trim()
   .min(9)
@@ -45,6 +47,7 @@ const listSupervisorsQuerySchema = Joi.object({
   limit: Joi.number().integer().min(1).max(100).default(20),
   q: Joi.string().trim().max(100).optional().allow(''),
   status: Joi.string().valid('ENABLED', 'BLOCKED').optional(),
+  ids: idsListSchema,
   sort: Joi.string().valid('newest', 'oldest').default('newest'),
 });
 

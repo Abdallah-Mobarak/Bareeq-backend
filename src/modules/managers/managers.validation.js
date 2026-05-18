@@ -1,5 +1,7 @@
 const Joi = require('joi');
 
+const { idsListSchema } = require('../../utils/validation');
+
 /**
  * Loose phone validation. Saudi numbers come in many shapes
  * (+966, 966, 05, 5, 0...) and the FRD does not pin one format down.
@@ -72,6 +74,7 @@ const listManagersQuerySchema = Joi.object({
   q: Joi.string().trim().max(100).optional().allow(''),
   status: Joi.string().valid('ENABLED', 'BLOCKED').optional(),
   permissionRoleId: Joi.string().optional().allow(''),
+  ids: idsListSchema,
   sort: Joi.string().valid('newest', 'oldest').default('newest'),
 });
 
