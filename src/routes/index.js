@@ -49,6 +49,7 @@ const managerRepresentativesRoutes = require('../modules/manager-representatives
 const adminServiceTypesRoutes = require('../modules/admin-service-types/admin-service-types.routes');
 const managerServiceTypesRoutes = require('../modules/manager-service-types/manager-service-types.routes');
 const adminContactMessagesRoutes = require('../modules/admin-contact-messages/admin-contact-messages.routes');
+const adminMonthlyReportsRoutes = require('../modules/admin-monthly-reports/admin-monthly-reports.routes');
 const visitInstancesRoutes = require('../modules/visit-instances/visit-instances.routes');
 const {
   supervisorRouter: visitDocSupervisorRoutes,
@@ -113,6 +114,7 @@ router.use('/manager/representatives', managerRepresentativesRoutes);
 router.use('/admin/service-types', adminServiceTypesRoutes);
 router.use('/manager/service-types', managerServiceTypesRoutes);
 router.use('/admin/contact-messages', adminContactMessagesRoutes);
+router.use('/admin/monthly-reports', adminMonthlyReportsRoutes);
 router.use('/visit-instances', visitInstancesRoutes);
 router.use('/visit-instances', visitDocSupervisorRoutes);
 router.use('/public/document', visitDocPublicRoutes);
