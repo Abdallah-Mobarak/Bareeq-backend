@@ -3,28 +3,34 @@ const { ApiError } = require('../../utils/ApiError');
 
 /**
  * Representatives — FRD §3.10.
- * Service agreements with clients. The total price is computed by the
- * server (not trusted from the client) per FRD §3.10's instruction
- * that the rate is "managed only by the admin". For now the manager
- * sends the `hourlyRate` directly; once the admin module ships the
- * ServiceType table, this service will look up the rate by FK and
- * stop accepting it in the payload.
  *
- * We persist `price` alongside the three inputs so historical rows
- * remain accurate even if the rate is edited tomorrow.
+ * Service agreements with clients. The manager picks a `serviceTypeId`
+ * from the admin-managed catalog; the server reads the canonical
+ * `hourlyRate` from that ServiceType and computes the total price.
+ * The hourlyRate is snapshotted into the Representative's `price` so
+ * historical rows survive future rate edits unchanged.
  */
 
 /**
- * Compute the agreement total. Using Number() on Prisma Decimals is
- * fine here — the multiplied result will round-trip to Prisma as a
- * Decimal again. If we ever start running this on tens-of-billions
- * type amounts, swap in Decimal.js to avoid float imprecision.
+ * Compute the agreement total from the ServiceType's hourlyRate.
+ * Using Number() on Prisma Decimals is fine here — the multiplied
+ * result will round-trip back as Decimal. If we ever need
+ * tens-of-billions precision, swap in Decimal.js.
  */
 const computePrice = ({ hourlyRate, numberOfWorkers, numberOfHours }) => {
   const total = Number(hourlyRate) * Number(numberOfWorkers) * Number(numberOfHours);
-  // Round to 2 decimal places to keep currency output predictable.
   return Math.round(total * 100) / 100;
 };
+
+const serializeServiceType = (st) =>
+  st
+    ? {
+        id: st.id,
+        nameAr: st.nameAr,
+        nameEn: st.nameEn,
+        hourlyRate: st.hourlyRate ? Number(st.hourlyRate) : 0,
+      }
+    : null;
 
 const serializeRepresentative = (r) => ({
   id: r.id,
@@ -32,8 +38,7 @@ const serializeRepresentative = (r) => ({
     ? { id: r.manager.id, nameAr: r.manager.nameAr, nameEn: r.manager.nameEn }
     : null,
   clientName: r.clientName,
-  serviceType: r.serviceType,
-  hourlyRate: r.hourlyRate,
+  serviceType: serializeServiceType(r.serviceType),
   numberOfWorkers: r.numberOfWorkers,
   numberOfHours: r.numberOfHours,
   price: r.price,
@@ -43,15 +48,31 @@ const serializeRepresentative = (r) => ({
   updatedAt: r.updatedAt,
 });
 
+/**
+ * Look up a ServiceType by id and fail loudly if missing / soft-deleted.
+ * Returns the full row so callers can read `hourlyRate` for pricing.
+ */
+const loadActiveServiceType = async (serviceTypeId) => {
+  const st = await prisma.serviceType.findFirst({
+    where: { id: serviceTypeId, deletedAt: null },
+  });
+  if (!st) throw ApiError.badRequest('Invalid serviceTypeId');
+  return st;
+};
+
 const createRepresentative = async (managerId, body) => {
-  const price = computePrice(body);
+  const st = await loadActiveServiceType(body.serviceTypeId);
+  const price = computePrice({
+    hourlyRate: st.hourlyRate,
+    numberOfWorkers: body.numberOfWorkers,
+    numberOfHours: body.numberOfHours,
+  });
 
   const row = await prisma.representative.create({
     data: {
       managerId,
       clientName: body.clientName,
-      serviceType: body.serviceType,
-      hourlyRate: body.hourlyRate,
+      serviceTypeId: st.id,
       numberOfWorkers: body.numberOfWorkers,
       numberOfHours: body.numberOfHours,
       price,
@@ -60,6 +81,7 @@ const createRepresentative = async (managerId, body) => {
     },
     include: {
       manager: { select: { id: true, nameAr: true, nameEn: true } },
+      serviceType: true,
     },
   });
   return serializeRepresentative(row);
@@ -68,8 +90,10 @@ const createRepresentative = async (managerId, body) => {
 const buildWhere = (q) => {
   const where = { deletedAt: null };
 
+  if (q.ids && q.ids.length > 0) where.id = { in: q.ids };
+
   if (q.clientName) where.clientName = { contains: q.clientName, mode: 'insensitive' };
-  if (q.serviceType) where.serviceType = { contains: q.serviceType, mode: 'insensitive' };
+  if (q.serviceTypeId) where.serviceTypeId = q.serviceTypeId;
   if (q.customerPhoneNumber)
     where.customerPhoneNumber = { contains: q.customerPhoneNumber };
 
@@ -100,6 +124,7 @@ const listRepresentatives = async (rawQuery) => {
       take: limit,
       include: {
         manager: { select: { id: true, nameAr: true, nameEn: true } },
+        serviceType: true,
       },
     }),
     prisma.representative.count({ where }),
@@ -121,6 +146,7 @@ const getRepresentativeById = async (id) => {
     where: { id, deletedAt: null },
     include: {
       manager: { select: { id: true, nameAr: true, nameEn: true } },
+      serviceType: true,
     },
   });
   if (!r) throw ApiError.notFound('Representative not found');
@@ -130,26 +156,32 @@ const getRepresentativeById = async (id) => {
 const updateRepresentative = async (id, body) => {
   const existing = await prisma.representative.findFirst({
     where: { id, deletedAt: null },
+    include: { serviceType: true },
   });
   if (!existing) throw ApiError.notFound('Representative not found');
 
   /**
-   * If ANY of the price inputs changed, recompute the price using
-   * the new value(s) merged onto the existing ones — partial PATCH
-   * shouldn't force the client to resend all three.
+   * Recompute price if any of the three pricing inputs changed.
+   * If the manager swapped the ServiceType, we read the new
+   * hourlyRate from the new ServiceType; otherwise we reuse the
+   * one already on the existing relation.
    */
   const needsRecompute =
-    body.hourlyRate !== undefined ||
+    body.serviceTypeId !== undefined ||
     body.numberOfWorkers !== undefined ||
     body.numberOfHours !== undefined;
+
+  let nextServiceType = existing.serviceType;
+  if (body.serviceTypeId !== undefined && body.serviceTypeId !== existing.serviceTypeId) {
+    nextServiceType = await loadActiveServiceType(body.serviceTypeId);
+  }
 
   const data = {};
   const setIf = (key, transform = (v) => v) => {
     if (body[key] !== undefined) data[key] = transform(body[key]);
   };
   setIf('clientName');
-  setIf('serviceType');
-  setIf('hourlyRate');
+  setIf('serviceTypeId');
   setIf('numberOfWorkers');
   setIf('numberOfHours');
   setIf('dateOfAgreement', (v) => new Date(v));
@@ -157,7 +189,7 @@ const updateRepresentative = async (id, body) => {
 
   if (needsRecompute) {
     data.price = computePrice({
-      hourlyRate: body.hourlyRate ?? existing.hourlyRate,
+      hourlyRate: nextServiceType.hourlyRate,
       numberOfWorkers: body.numberOfWorkers ?? existing.numberOfWorkers,
       numberOfHours: body.numberOfHours ?? existing.numberOfHours,
     });
@@ -168,6 +200,7 @@ const updateRepresentative = async (id, body) => {
     data,
     include: {
       manager: { select: { id: true, nameAr: true, nameEn: true } },
+      serviceType: true,
     },
   });
   return serializeRepresentative(updated);
@@ -197,13 +230,15 @@ const listRepresentativesForExport = async (rawQuery) => {
     take: EXPORT_HARD_LIMIT,
     include: {
       manager: { select: { nameAr: true, nameEn: true } },
+      serviceType: { select: { nameAr: true, nameEn: true, hourlyRate: true } },
     },
   });
 
   return items.map((r) => ({
     clientName: r.clientName,
-    serviceType: r.serviceType,
-    hourlyRate: r.hourlyRate ? Number(r.hourlyRate) : null,
+    serviceTypeAr: r.serviceType?.nameAr ?? null,
+    serviceTypeEn: r.serviceType?.nameEn ?? null,
+    hourlyRate: r.serviceType?.hourlyRate ? Number(r.serviceType.hourlyRate) : null,
     numberOfWorkers: r.numberOfWorkers,
     numberOfHours: r.numberOfHours ? Number(r.numberOfHours) : null,
     price: r.price ? Number(r.price) : null,

@@ -46,6 +46,8 @@ const managerPortalRoutes = require('../modules/manager-portal/manager-portal.ro
 const managerMonthlySalesRoutes = require('../modules/manager-monthly-sales/manager-monthly-sales.routes');
 const managerCarCaseRoutes = require('../modules/manager-car-case/manager-car-case.routes');
 const managerRepresentativesRoutes = require('../modules/manager-representatives/manager-representatives.routes');
+const adminServiceTypesRoutes = require('../modules/admin-service-types/admin-service-types.routes');
+const managerServiceTypesRoutes = require('../modules/manager-service-types/manager-service-types.routes');
 const adminContactMessagesRoutes = require('../modules/admin-contact-messages/admin-contact-messages.routes');
 const visitInstancesRoutes = require('../modules/visit-instances/visit-instances.routes');
 const {
@@ -108,6 +110,8 @@ router.use('/manager', managerPortalRoutes);
 router.use('/manager/clients', managerMonthlySalesRoutes);
 router.use('/manager/car-cases', managerCarCaseRoutes);
 router.use('/manager/representatives', managerRepresentativesRoutes);
+router.use('/admin/service-types', adminServiceTypesRoutes);
+router.use('/manager/service-types', managerServiceTypesRoutes);
 router.use('/admin/contact-messages', adminContactMessagesRoutes);
 router.use('/visit-instances', visitInstancesRoutes);
 router.use('/visit-instances', visitDocSupervisorRoutes);

@@ -5,7 +5,8 @@ const service = require('./manager-representatives.service');
 
 const EXPORT_COLUMNS = [
   { header: 'Client', key: 'clientName', width: 26 },
-  { header: 'Service', key: 'serviceType', width: 22 },
+  { header: 'Service (AR)', key: 'serviceTypeAr', width: 22 },
+  { header: 'Service (EN)', key: 'serviceTypeEn', width: 22 },
   { header: 'Hourly Rate', key: 'hourlyRate', width: 14 },
   { header: '#Workers', key: 'numberOfWorkers', width: 10 },
   { header: '#Hours', key: 'numberOfHours', width: 10 },
