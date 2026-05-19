@@ -79,6 +79,16 @@ enum ContactMessageStatus {
   REPLIED
 }
 
+/// Lifecycle of a marketplace Dispute (FRD §3.6 marketplace).
+/// PENDING    → user submitted; no admin has looked yet.
+/// IN_REVIEW  → admin opened it and started investigating.
+/// RESOLVED   → admin closed it (typically with a response).
+enum DisputeStatus {
+  PENDING
+  IN_REVIEW
+  RESOLVED
+}
+
 /// What a OneTimeCode is verifying. Lets us route one shared table to
 /// multiple flows without entangling them (Marketplace §1.1, §2.1).
 enum OneTimeCodePurpose {
@@ -120,6 +130,10 @@ enum NotificationType {
   // Withdrawal lifecycle (Sprint 4 SP cash-out)
   WITHDRAWAL_APPROVED
   WITHDRAWAL_REJECTED
+
+  // Dispute lifecycle (FRD §3.6 marketplace)
+  DISPUTE_FILED // admin received a new complaint from a user
+  DISPUTE_RESPONDED // user received an admin response to their dispute
 }
 
 /// Lifecycle of a WithdrawalRequest (FRD §3.5.2).
@@ -270,6 +284,11 @@ model User {
   // Admin-sent broadcast notifications — one row per "send" event,
   // separate from the per-user `notifications` fan-out.
   notificationBroadcastsSent NotificationBroadcast[] @relation("BroadcastSentByAdmin")
+
+  // Marketplace disputes (FRD §3.6 marketplace). A user files disputes;
+  // an admin responds to them.
+  disputesFiled     Dispute[] @relation("DisputeFiledBy")
+  disputesResponded Dispute[] @relation("DisputeRespondedBy")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -1353,6 +1372,11 @@ model Booking {
   /// that moved because of booking X" in admin tools.
   walletTransactions WalletTransaction[]
 
+  /// Disputes filed about this booking. A booking can have multiple
+  /// disputes over its lifetime (customer + SP each raise one, or the
+  /// same user files twice for different issues).
+  disputes Dispute[]
+
   @@index([customerId, status])
   @@index([assignedSpId, status])
   @@index([status, createdAt]) // pool query: PENDING ordered by oldest first
@@ -1684,4 +1708,59 @@ model WithdrawalRequest {
   @@index([spId, status])
   @@index([status, createdAt]) // pending queue for admin
   @@map("withdrawal_requests")
+}
+
+// ============================================
+// DISPUTES — FRD §3.6 (marketplace)
+// ============================================
+// User files a complaint → admin reviews and responds. Both Customer
+// and Service Provider can file. The dispute can optionally reference
+// a Booking (e.g., "the SP never showed up for booking #123"); when
+// it doesn't, it's a generic platform complaint (e.g., "the app keeps
+// crashing").
+// ============================================
+
+/// A complaint filed by a marketplace user (Customer or SP). Admins
+/// triage these from PENDING → IN_REVIEW → RESOLVED, optionally
+/// writing back a response that gets surfaced to the filer.
+model Dispute {
+  id String @id @default(cuid())
+
+  /// Who filed it. Always a CUSTOMER or SERVICE_PROVIDER user.
+  /// We do NOT denormalise the role onto the dispute row — read
+  /// `user.role` if you need it, it can't change for a given user
+  /// without going through admin tools.
+  userId String @map("user_id")
+  user   User   @relation("DisputeFiledBy", fields: [userId], references: [id])
+
+  /// Free-text subject + body. The validation layer enforces length
+  /// limits; we accept plain text only (the FE strips formatting).
+  subject String
+  message String
+
+  /// Optional context — links a dispute to a specific booking the
+  /// user is complaining about. Null when the dispute is generic
+  /// (e.g., app bug, billing question).
+  bookingId String?  @map("booking_id")
+  booking   Booking? @relation(fields: [bookingId], references: [id])
+
+  status DisputeStatus @default(PENDING)
+
+  /// Admin response + audit trail. All three move together: when the
+  /// admin patches in a response, `respondedAt` is stamped and
+  /// `respondedByAdminId` is set. They stay NULL until then.
+  adminResponse      String?
+  respondedByAdminId String?   @map("responded_by_admin_id")
+  respondedByAdmin   User?     @relation("DisputeRespondedBy", fields: [respondedByAdminId], references: [id])
+  respondedAt        DateTime? @map("responded_at")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([userId])
+  @@index([status, createdAt]) // admin queue: oldest pending first
+  @@index([bookingId])
+  @@index([deletedAt])
+  @@map("disputes")
 }

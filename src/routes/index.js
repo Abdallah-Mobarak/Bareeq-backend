@@ -51,6 +51,9 @@ const managerServiceTypesRoutes = require('../modules/manager-service-types/mana
 const adminContactMessagesRoutes = require('../modules/admin-contact-messages/admin-contact-messages.routes');
 const adminMonthlyReportsRoutes = require('../modules/admin-monthly-reports/admin-monthly-reports.routes');
 const adminBroadcastsRoutes = require('../modules/admin-broadcasts/admin-broadcasts.routes');
+const customerDisputesRoutes = require('../modules/customer-disputes/customer-disputes.routes');
+const serviceProviderDisputesRoutes = require('../modules/service-provider-disputes/service-provider-disputes.routes');
+const adminDisputesRoutes = require('../modules/admin-disputes/admin-disputes.routes');
 const visitInstancesRoutes = require('../modules/visit-instances/visit-instances.routes');
 const {
   supervisorRouter: visitDocSupervisorRoutes,
@@ -117,6 +120,9 @@ router.use('/manager/service-types', managerServiceTypesRoutes);
 router.use('/admin/contact-messages', adminContactMessagesRoutes);
 router.use('/admin/monthly-reports', adminMonthlyReportsRoutes);
 router.use('/admin/broadcasts', adminBroadcastsRoutes);
+router.use('/customer/disputes', customerDisputesRoutes);
+router.use('/service-provider/disputes', serviceProviderDisputesRoutes);
+router.use('/admin/disputes', adminDisputesRoutes);
 router.use('/visit-instances', visitInstancesRoutes);
 router.use('/visit-instances', visitDocSupervisorRoutes);
 router.use('/public/document', visitDocPublicRoutes);
