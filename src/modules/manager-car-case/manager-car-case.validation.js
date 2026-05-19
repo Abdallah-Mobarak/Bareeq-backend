@@ -6,29 +6,35 @@ const idParamSchema = Joi.object({
   id: Joi.string().trim().min(1).max(40).required(),
 });
 
+/**
+ * `area`, `licensePlate`, and `vehicleCondition` are now FKs into the
+ * admin-managed Lookup table (FRD §4.10.2). The manager passes
+ * Lookup IDs; the service layer asserts each id targets a Lookup of
+ * the correct type before saving.
+ */
 const fieldRules = {
   supervisorId: Joi.string().trim().min(1).max(40),
-  area: Joi.string().trim().min(1).max(100),
-  licensePlate: Joi.string().trim().min(1).max(50),
-  vehicleCondition: Joi.string().trim().min(1).max(100),
+  areaId: Joi.string().trim().min(1).max(40),
+  licensePlateId: Joi.string().trim().min(1).max(40),
+  vehicleConditionId: Joi.string().trim().min(1).max(40),
   oilChangeDate: Joi.date().iso().allow(null),
   notes: Joi.string().trim().max(2000).allow(null, ''),
 };
 
 const createCarCaseSchema = Joi.object({
   supervisorId: fieldRules.supervisorId.required(),
-  area: fieldRules.area.required(),
-  licensePlate: fieldRules.licensePlate.required(),
-  vehicleCondition: fieldRules.vehicleCondition.required(),
+  areaId: fieldRules.areaId.required(),
+  licensePlateId: fieldRules.licensePlateId.required(),
+  vehicleConditionId: fieldRules.vehicleConditionId.required(),
   oilChangeDate: fieldRules.oilChangeDate.optional(),
   notes: fieldRules.notes.optional(),
 });
 
 const updateCarCaseSchema = Joi.object({
   supervisorId: fieldRules.supervisorId.optional(),
-  area: fieldRules.area.optional(),
-  licensePlate: fieldRules.licensePlate.optional(),
-  vehicleCondition: fieldRules.vehicleCondition.optional(),
+  areaId: fieldRules.areaId.optional(),
+  licensePlateId: fieldRules.licensePlateId.optional(),
+  vehicleConditionId: fieldRules.vehicleConditionId.optional(),
   oilChangeDate: fieldRules.oilChangeDate.optional(),
   notes: fieldRules.notes.optional(),
 }).min(1);
@@ -40,9 +46,9 @@ const listCarCasesQuerySchema = Joi.object({
 
   supervisorId: Joi.string().trim().max(40).optional(),
   supervisorName: Joi.string().trim().max(100).optional(),
-  area: Joi.string().trim().max(100).optional(),
-  licensePlate: Joi.string().trim().max(50).optional(),
-  vehicleCondition: Joi.string().trim().max(100).optional(),
+  areaId: Joi.string().trim().max(40).optional(),
+  licensePlateId: Joi.string().trim().max(40).optional(),
+  vehicleConditionId: Joi.string().trim().max(40).optional(),
 
   oilChangeDateFrom: Joi.date().iso().optional(),
   oilChangeDateTo: Joi.date().iso().optional(),

@@ -89,6 +89,20 @@ enum DisputeStatus {
   RESOLVED
 }
 
+/// Discriminator for the shared Lookup table — FRD §4.9.2 (Sales Data
+/// Management) + §4.10.2 (Care Case Data Management). One row per
+/// admin-managed dropdown option; the `type` field tells you which
+/// dropdown the row belongs to. Adding a new lookup category later is
+/// a one-line enum extension, no new table needed.
+enum LookupType {
+  CONTRACT_TYPE
+  TAX_TYPE
+  CONTRACT_STATUS
+  AREA
+  LICENSE_PLATE
+  VEHICLE_CONDITION
+}
+
 /// What a OneTimeCode is verifying. Lets us route one shared table to
 /// multiple flows without entangling them (Marketplace §1.1, §2.1).
 enum OneTimeCodePurpose {
@@ -645,11 +659,10 @@ model AdditionalTask {
 ///   • Contract Type
 ///   • Tax (Tax Type)
 ///   • Contract Status
-/// For Phase D.1 we store them as free-text strings — the manager UI
-/// can ship dropdowns with hard-coded values. When the admin module
-/// builds out those lookup tables in a later phase, a migration will
-/// convert these to FKs without changing the API contract (the API
-/// will accept either an id or the legacy string).
+/// These are now admin-managed dropdowns backed by the Lookup table
+/// (FRD §4.9.2). The Client stores FKs into Lookup; the service
+/// layer asserts each FK references a row of the correct type so we
+/// can't accidentally save `contractTypeId = <a Lookup of type AREA>`.
 model Client {
   id String @id @default(cuid())
 
@@ -665,10 +678,15 @@ model Client {
   date      DateTime
   notes     String?
 
-  // Admin-managed lookups stored as strings until the lookup tables ship.
-  contractType   String? @map("contract_type")
-  taxType        String? @map("tax_type")
-  contractStatus String? @map("contract_status")
+  /// Admin-managed lookup FKs. All three are nullable to match the
+  /// FRD §3.7.2 wording ("select from admin-managed list") — the
+  /// manager picks one when known, leaves blank otherwise.
+  contractTypeId   String? @map("contract_type_id")
+  contractType     Lookup? @relation("ClientContractType", fields: [contractTypeId], references: [id])
+  taxTypeId        String? @map("tax_type_id")
+  taxType          Lookup? @relation("ClientTaxType", fields: [taxTypeId], references: [id])
+  contractStatusId String? @map("contract_status_id")
+  contractStatus   Lookup? @relation("ClientContractStatus", fields: [contractStatusId], references: [id])
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -677,9 +695,54 @@ model Client {
   @@index([managerId])
   @@index([name])
   @@index([date])
-  @@index([contractStatus])
+  @@index([contractStatusId])
   @@index([deletedAt])
   @@map("clients")
+}
+
+// ============================================
+// LOOKUPS — FRD §4.9.2 + §4.10.2
+// ============================================
+// One row per admin-managed dropdown option. The `type` discriminator
+// tells you which dropdown the row belongs to. Replaces what used to
+// be six free-text columns scattered across Client + CarCase.
+//
+// Why one shared table instead of six separate ones: the CRUD shape
+// is identical across all six (bilingual title + sort hint), and
+// keeping them together lets the admin module ship one set of
+// endpoints instead of six near-duplicates. The trade-off is that
+// type integrity (Client.contractTypeId → Lookup{type: CONTRACT_TYPE})
+// has to be enforced in the service layer, since SQL FKs can't
+// constrain to a subset of rows.
+// ============================================
+
+model Lookup {
+  id      String     @id @default(cuid())
+  type    LookupType
+  titleAr String     @map("title_ar")
+  titleEn String?    @map("title_en")
+
+  /// Sort hint for the FE dropdown. Defaults to 0 — admins can
+  /// reorder by setting this in the PATCH body.
+  sortOrder Int @default(0) @map("sort_order")
+
+  /// Back-refs so Prisma surfaces the relations cleanly. We don't
+  /// actually use them on read paths today; they exist for future
+  /// "where is this lookup used?" admin tooling.
+  clientsAsContractType      Client[]  @relation("ClientContractType")
+  clientsAsTaxType           Client[]  @relation("ClientTaxType")
+  clientsAsContractStatus    Client[]  @relation("ClientContractStatus")
+  carCasesAsArea             CarCase[] @relation("CarCaseArea")
+  carCasesAsLicensePlate     CarCase[] @relation("CarCaseLicensePlate")
+  carCasesAsVehicleCondition CarCase[] @relation("CarCaseVehicleCondition")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  /// Hot path: list dropdown options for a given type, sorted.
+  @@index([type, deletedAt, sortOrder])
+  @@map("lookups")
 }
 
 // ============================================
@@ -689,10 +752,9 @@ model Client {
 /// Vehicle assignment + condition tracking for supervisors. Each case
 /// links a supervisor to a vehicle (license plate) within an area.
 ///
-/// Admin-managed lookups (Area, License Plate, Vehicle Condition) are
-/// stored as strings for Phase D.2 — same approach as Client. A later
-/// migration will convert them to FKs once the admin module ships
-/// the lookup tables.
+/// Area / License Plate / Vehicle Condition are now FKs into the
+/// shared Lookup table (FRD §4.10.2). The service layer enforces
+/// that each FK targets the correct LookupType.
 model CarCase {
   id String @id @default(cuid())
 
@@ -704,12 +766,17 @@ model CarCase {
   supervisorId String @map("supervisor_id")
   supervisor   User   @relation("CarCaseSupervisor", fields: [supervisorId], references: [id])
 
-  // Admin-managed lookups stored as strings until the lookup tables ship.
-  area             String    @map("area")
-  licensePlate     String    @map("license_plate")
-  vehicleCondition String    @map("vehicle_condition")
-  oilChangeDate    DateTime? @map("oil_change_date")
-  notes            String?
+  /// Admin-managed lookup FKs. NOT NULL — every car case must point
+  /// at an area, a vehicle, and a condition row to be meaningful.
+  areaId             String @map("area_id")
+  area               Lookup @relation("CarCaseArea", fields: [areaId], references: [id])
+  licensePlateId     String @map("license_plate_id")
+  licensePlate       Lookup @relation("CarCaseLicensePlate", fields: [licensePlateId], references: [id])
+  vehicleConditionId String @map("vehicle_condition_id")
+  vehicleCondition   Lookup @relation("CarCaseVehicleCondition", fields: [vehicleConditionId], references: [id])
+
+  oilChangeDate DateTime? @map("oil_change_date")
+  notes         String?
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -717,8 +784,8 @@ model CarCase {
 
   @@index([managerId])
   @@index([supervisorId])
-  @@index([area])
-  @@index([licensePlate])
+  @@index([areaId])
+  @@index([licensePlateId])
   @@index([deletedAt])
   @@map("car_cases")
 }

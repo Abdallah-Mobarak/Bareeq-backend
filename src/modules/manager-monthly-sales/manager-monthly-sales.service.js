@@ -1,15 +1,19 @@
 const { prisma } = require('../../infrastructure/database/prisma');
 const { ApiError } = require('../../utils/ApiError');
+const lookupService = require('../admin-lookups/admin-lookups.service');
 
 /**
  * Monthly Sales / Clients — FRD §3.7.
  *
- * Manager-managed sales contracts. The admin-managed lookups (contract
- * type / tax / contract status) are stored as free-text strings for
- * Phase D.1 — see schema comment on the Client model. The API still
- * accepts them as strings even when we later migrate to FKs (we'll
- * just route them through a lookup-by-name resolver server-side).
+ * Manager-managed sales contracts. Contract Type / Tax Type /
+ * Contract Status are admin-managed Lookups (FRD §4.9.2). The
+ * manager passes Lookup IDs; the service layer validates each id
+ * targets a Lookup row of the matching type via the shared
+ * lookupService.loadActiveByType() helper.
  */
+
+const serializeLookup = (l) =>
+  l ? { id: l.id, titleAr: l.titleAr, titleEn: l.titleEn } : null;
 
 const serializeClient = (c) => ({
   id: c.id,
@@ -17,35 +21,61 @@ const serializeClient = (c) => ({
     ? { id: c.manager.id, nameAr: c.manager.nameAr, nameEn: c.manager.nameEn }
     : null,
   name: c.name,
-  contractType: c.contractType,
+  contractType: serializeLookup(c.contractType),
   statement: c.statement,
   website: c.website,
   price: c.price,
-  taxType: c.taxType,
+  taxType: serializeLookup(c.taxType),
   date: c.date,
-  contractStatus: c.contractStatus,
+  contractStatus: serializeLookup(c.contractStatus),
   notes: c.notes,
   createdAt: c.createdAt,
   updatedAt: c.updatedAt,
 });
 
+/**
+ * Resolve the three optional lookup FKs in parallel. Each must point
+ * at a row of the expected type, or this throws and the calling
+ * write is aborted before any DB write happens.
+ *
+ * Empty string ('') is treated as null — the FE sometimes posts ''
+ * for "no selection" and we'd rather clear the FK than fail validation.
+ */
+const validateLookupFks = async (body) => {
+  const tasks = [];
+  if (body.contractTypeId)
+    tasks.push(lookupService.loadActiveByType(body.contractTypeId, 'CONTRACT_TYPE'));
+  if (body.taxTypeId)
+    tasks.push(lookupService.loadActiveByType(body.taxTypeId, 'TAX_TYPE'));
+  if (body.contractStatusId)
+    tasks.push(lookupService.loadActiveByType(body.contractStatusId, 'CONTRACT_STATUS'));
+  await Promise.all(tasks);
+};
+
+const clientInclude = {
+  manager: { select: { id: true, nameAr: true, nameEn: true } },
+  contractType: true,
+  taxType: true,
+  contractStatus: true,
+};
+
 const createClient = async (managerId, body) => {
+  await validateLookupFks(body);
+
   const client = await prisma.client.create({
     data: {
       managerId,
       name: body.name,
-      contractType: body.contractType ?? null,
+      contractTypeId: body.contractTypeId || null,
       statement: body.statement ?? null,
       website: body.website ?? null,
       price: body.price ?? null,
-      taxType: body.taxType ?? null,
+      taxTypeId: body.taxTypeId || null,
       date: new Date(body.date),
-      contractStatus: body.contractStatus ?? null,
+      contractStatusId: body.contractStatusId || null,
       notes: body.notes ?? null,
     },
-    include: {
-      manager: { select: { id: true, nameAr: true, nameEn: true } },
-    },
+    include: clientInclude,
   });
   return serializeClient(client);
 };
@@ -55,17 +85,12 @@ const buildWhere = (q) => {
 
   if (q.ids && q.ids.length > 0) where.id = { in: q.ids };
   if (q.name) where.name = { contains: q.name, mode: 'insensitive' };
-  if (q.contractType) where.contractType = { contains: q.contractType, mode: 'insensitive' };
+  if (q.contractTypeId) where.contractTypeId = q.contractTypeId;
   if (q.statement) where.statement = { contains: q.statement, mode: 'insensitive' };
   if (q.website) where.website = { contains: q.website, mode: 'insensitive' };
-  if (q.taxType) where.taxType = { contains: q.taxType, mode: 'insensitive' };
-  if (q.contractStatus) where.contractStatus = { contains: q.contractStatus, mode: 'insensitive' };
+  if (q.taxTypeId) where.taxTypeId = q.taxTypeId;
+  if (q.contractStatusId) where.contractStatusId = q.contractStatusId;
 
-  /**
-   * Price as range. The FRD §3.7.4 lists price as a filter — we expose
-   * both minPrice and maxPrice so the UI can offer a slider without an
-   * extra round trip.
-   */
   if (q.minPrice !== undefined || q.maxPrice !== undefined) {
     where.price = {};
     if (q.minPrice !== undefined) where.price.gte = q.minPrice;
@@ -97,9 +122,7 @@ const listClients = async (rawQuery) => {
       orderBy,
       skip: (page - 1) * limit,
       take: limit,
-      include: {
-        manager: { select: { id: true, nameAr: true, nameEn: true } },
-      },
+      include: clientInclude,
     }),
     prisma.client.count({ where }),
   ]);
@@ -118,9 +141,7 @@ const listClients = async (rawQuery) => {
 const getClientById = async (id) => {
   const client = await prisma.client.findFirst({
     where: { id, deletedAt: null },
-    include: {
-      manager: { select: { id: true, nameAr: true, nameEn: true } },
-    },
+    include: clientInclude,
   });
   if (!client) throw ApiError.notFound('Client not found');
   return serializeClient(client);
@@ -133,32 +154,26 @@ const updateClient = async (id, body) => {
   });
   if (!existing) throw ApiError.notFound('Client not found');
 
-  /**
-   * Partial update. Only fields that are explicitly present in the
-   * body get written — undefined means "leave as-is", null means
-   * "clear this field". This lets the UI reset an optional field
-   * (e.g. clear `notes`) by sending `notes: null`.
-   */
+  await validateLookupFks(body);
+
   const data = {};
   const setIf = (key, transform = (v) => v) => {
     if (body[key] !== undefined) data[key] = transform(body[key]);
   };
   setIf('name');
-  setIf('contractType', (v) => v ?? null);
+  setIf('contractTypeId', (v) => v || null);
   setIf('statement', (v) => v ?? null);
   setIf('website', (v) => v ?? null);
   setIf('price', (v) => v ?? null);
-  setIf('taxType', (v) => v ?? null);
+  setIf('taxTypeId', (v) => v || null);
   setIf('date', (v) => new Date(v));
-  setIf('contractStatus', (v) => v ?? null);
+  setIf('contractStatusId', (v) => v || null);
   setIf('notes', (v) => v ?? null);
 
   const updated = await prisma.client.update({
     where: { id },
     data,
-    include: {
-      manager: { select: { id: true, nameAr: true, nameEn: true } },
-    },
+    include: clientInclude,
   });
   return serializeClient(updated);
 };
@@ -187,18 +202,21 @@ const listClientsForExport = async (rawQuery) => {
     take: EXPORT_HARD_LIMIT,
     include: {
       manager: { select: { nameAr: true, nameEn: true } },
+      contractType: { select: { titleAr: true, titleEn: true } },
+      taxType: { select: { titleAr: true, titleEn: true } },
+      contractStatus: { select: { titleAr: true, titleEn: true } },
     },
   });
 
   return items.map((c) => ({
     name: c.name,
-    contractType: c.contractType,
+    contractType: c.contractType?.titleAr ?? null,
     statement: c.statement,
     website: c.website,
     price: c.price ? Number(c.price) : null,
-    taxType: c.taxType,
+    taxType: c.taxType?.titleAr ?? null,
     date: c.date ? new Date(c.date).toISOString().slice(0, 10) : null,
-    contractStatus: c.contractStatus,
+    contractStatus: c.contractStatus?.titleAr ?? null,
     createdBy: c.manager
       ? `${c.manager.nameAr}${c.manager.nameEn ? ` (${c.manager.nameEn})` : ''}`
       : null,

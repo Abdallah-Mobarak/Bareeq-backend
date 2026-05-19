@@ -12,48 +12,53 @@ const idParamSchema = Joi.object({
  * `.required()` from EVERY field on the partial — we want different
  * required-sets per operation.
  */
+/**
+ * `contractType`, `taxType`, and `contractStatus` are now FKs into
+ * the admin-managed Lookup table (FRD §4.9.2). The client sends
+ * Lookup IDs (`contractTypeId`, `taxTypeId`, `contractStatusId`);
+ * the service layer asserts each id targets a Lookup row of the
+ * matching type before saving.
+ */
 const fieldRules = {
   name: Joi.string().trim().min(1).max(200),
-  contractType: Joi.string().trim().max(100).allow(null, ''),
   statement: Joi.string().trim().max(500).allow(null, ''),
   website: Joi.string().trim().uri().max(500).allow(null, ''),
   price: Joi.number().min(0).allow(null),
-  taxType: Joi.string().trim().max(100).allow(null, ''),
   date: Joi.date().iso(),
-  contractStatus: Joi.string().trim().max(100).allow(null, ''),
   notes: Joi.string().trim().max(2000).allow(null, ''),
+  contractTypeId: Joi.string().trim().min(1).max(40).allow(null, ''),
+  taxTypeId: Joi.string().trim().min(1).max(40).allow(null, ''),
+  contractStatusId: Joi.string().trim().min(1).max(40).allow(null, ''),
 };
 
 const createClientSchema = Joi.object({
   name: fieldRules.name.required(),
-  contractType: fieldRules.contractType.optional(),
+  contractTypeId: fieldRules.contractTypeId.optional(),
   statement: fieldRules.statement.optional(),
   website: fieldRules.website.optional(),
   price: fieldRules.price.optional(),
-  taxType: fieldRules.taxType.optional(),
+  taxTypeId: fieldRules.taxTypeId.optional(),
   date: fieldRules.date.required(),
-  contractStatus: fieldRules.contractStatus.optional(),
+  contractStatusId: fieldRules.contractStatusId.optional(),
   notes: fieldRules.notes.optional(),
 });
 
 const updateClientSchema = Joi.object({
   name: fieldRules.name.optional(),
-  contractType: fieldRules.contractType.optional(),
+  contractTypeId: fieldRules.contractTypeId.optional(),
   statement: fieldRules.statement.optional(),
   website: fieldRules.website.optional(),
   price: fieldRules.price.optional(),
-  taxType: fieldRules.taxType.optional(),
+  taxTypeId: fieldRules.taxTypeId.optional(),
   date: fieldRules.date.optional(),
-  contractStatus: fieldRules.contractStatus.optional(),
+  contractStatusId: fieldRules.contractStatusId.optional(),
   notes: fieldRules.notes.optional(),
 }).min(1); // empty PATCH body is a bug — fail fast.
 
 /**
  * Search / filter schema — FRD §3.7.3 (search by name + date) and
- * §3.7.4 (filter by contractType / statement / website / price /
- * taxType / date / contractStatus). We expose price as a range
- * (minPrice/maxPrice) since "filter by price" is most useful as a
- * slider, not a single equality match.
+ * §3.7.4 (filter). Lookup filters use IDs now; `name` keyword still
+ * targets the Client.name string column.
  */
 const listClientsQuerySchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
@@ -61,11 +66,11 @@ const listClientsQuerySchema = Joi.object({
   sort: Joi.string().valid('newest', 'oldest', 'date', 'name').default('newest'),
 
   name: Joi.string().trim().max(200).optional(),
-  contractType: Joi.string().trim().max(100).optional(),
+  contractTypeId: Joi.string().trim().max(40).optional(),
   statement: Joi.string().trim().max(500).optional(),
   website: Joi.string().trim().max(500).optional(),
-  taxType: Joi.string().trim().max(100).optional(),
-  contractStatus: Joi.string().trim().max(100).optional(),
+  taxTypeId: Joi.string().trim().max(40).optional(),
+  contractStatusId: Joi.string().trim().max(40).optional(),
 
   minPrice: Joi.number().min(0).optional(),
   maxPrice: Joi.number().min(0).optional(),
