@@ -54,6 +54,8 @@ const adminBroadcastsRoutes = require('../modules/admin-broadcasts/admin-broadca
 const customerDisputesRoutes = require('../modules/customer-disputes/customer-disputes.routes');
 const serviceProviderDisputesRoutes = require('../modules/service-provider-disputes/service-provider-disputes.routes');
 const adminDisputesRoutes = require('../modules/admin-disputes/admin-disputes.routes');
+const adminSystemSettingsRoutes = require('../modules/admin-system-settings/admin-system-settings.routes');
+const systemSettingsRoutes = require('../modules/system-settings/system-settings.routes');
 const visitInstancesRoutes = require('../modules/visit-instances/visit-instances.routes');
 const {
   supervisorRouter: visitDocSupervisorRoutes,
@@ -123,6 +125,8 @@ router.use('/admin/broadcasts', adminBroadcastsRoutes);
 router.use('/customer/disputes', customerDisputesRoutes);
 router.use('/service-provider/disputes', serviceProviderDisputesRoutes);
 router.use('/admin/disputes', adminDisputesRoutes);
+router.use('/admin/system-settings', adminSystemSettingsRoutes);
+router.use('/settings', systemSettingsRoutes);
 router.use('/visit-instances', visitInstancesRoutes);
 router.use('/visit-instances', visitDocSupervisorRoutes);
 router.use('/public/document', visitDocPublicRoutes);
