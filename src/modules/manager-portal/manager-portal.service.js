@@ -1124,8 +1124,16 @@ const fetchMonthInstances = async (year, month, regionFilter) => {
         },
       },
     },
+    /**
+     * Selection covers all three callers — summary, regional, and the
+     * observation-builder. `documentationStatus` + `notImplementedReason`
+     * are only consumed by `computeObservations`; the per-row cost is
+     * cheap enough that one shared query is preferable to forking.
+     */
     select: {
       status: true,
+      documentationStatus: true,
+      notImplementedReason: { select: { titleAr: true, titleEn: true } },
       scheduledVisit: {
         select: {
           regionSchedulingId: true,
@@ -1134,6 +1142,133 @@ const fetchMonthInstances = async (year, month, regionFilter) => {
       },
     },
   });
+};
+
+/**
+ * Derive the "most prominent observations or alerts" block from the
+ * raw month instances — FRD §3.12.1 / §4.13.1.
+ *
+ * The FRD doesn't define what counts as an observation, so we pick
+ * five auto-generated signals from the data already in scope:
+ *   1. Top 3 NOT_IMPLEMENTED reasons (warning) — what's blocking visits?
+ *   2. Branches with FINAL_CLOSED visits (critical) — permanent losses.
+ *   3. Untouched branches (warning) — no action at all yet this month.
+ *   4. IMPLEMENTED but UNDOCUMENTED visits (warning) — documentation lag.
+ *   5. Regions with < 50% completion (critical) — under-performing areas.
+ *
+ * Each observation carries a stable `code` + bilingual messages + a
+ * `count` so the frontend can choose to render either the message or
+ * a custom layout. `severity` is `'warning'` or `'critical'`.
+ *
+ * Returns at most 10 observations (top reasons capped at 3, plus the
+ * other four buckets) so the dashboard stays readable.
+ */
+const computeObservations = (instances) => {
+  const observations = [];
+
+  // ── 1. Top 3 Not-Implemented reasons ───────────────────────────────
+  const reasonCounts = new Map();
+  for (const inst of instances) {
+    if (inst.status !== 'NOT_IMPLEMENTED' || !inst.notImplementedReason) continue;
+    const key = inst.notImplementedReason.titleAr;
+    const entry = reasonCounts.get(key) || {
+      titleAr: inst.notImplementedReason.titleAr,
+      titleEn: inst.notImplementedReason.titleEn,
+      count: 0,
+    };
+    entry.count += 1;
+    reasonCounts.set(key, entry);
+  }
+  const topReasons = [...reasonCounts.values()]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 3);
+  for (const r of topReasons) {
+    observations.push({
+      code: 'TOP_NOT_IMPL_REASON',
+      severity: 'warning',
+      count: r.count,
+      messageAr: `${r.count} زيارة لم تنفذ — السبب: ${r.titleAr}`,
+      messageEn: r.titleEn
+        ? `${r.count} visits not implemented — reason: ${r.titleEn}`
+        : `${r.count} visits not implemented — reason: ${r.titleAr}`,
+    });
+  }
+
+  // ── 2. Final-Closed branches ───────────────────────────────────────
+  const finalClosed = instances.filter((i) => i.status === 'FINAL_CLOSED').length;
+  if (finalClosed > 0) {
+    observations.push({
+      code: 'FINAL_CLOSED_VISITS',
+      severity: 'critical',
+      count: finalClosed,
+      messageAr: `${finalClosed} زيارة تم إغلاقها نهائياً هذا الشهر`,
+      messageEn: `${finalClosed} visits marked Final Closed this month`,
+    });
+  }
+
+  // ── 3. Branches with NO action yet ─────────────────────────────────
+  // "No action" = every one of the branch's visits is still REMAINING.
+  const branchHasAction = new Map();
+  for (const inst of instances) {
+    const bid = inst.scheduledVisit.regionSchedulingId;
+    if (inst.status !== 'REMAINING') {
+      branchHasAction.set(bid, true);
+    } else if (!branchHasAction.has(bid)) {
+      branchHasAction.set(bid, false);
+    }
+  }
+  const untouched = [...branchHasAction.values()].filter((v) => v === false).length;
+  if (untouched > 0) {
+    observations.push({
+      code: 'UNTOUCHED_BRANCHES',
+      severity: 'warning',
+      count: untouched,
+      messageAr: `${untouched} فرع لم يبدأ المشرف العمل عليه بعد`,
+      messageEn: `${untouched} branches have no action taken yet`,
+    });
+  }
+
+  // ── 4. Implemented but Undocumented ────────────────────────────────
+  const undoc = instances.filter(
+    (i) => i.status === 'IMPLEMENTED' && i.documentationStatus === 'UNDOCUMENTED',
+  ).length;
+  if (undoc > 0) {
+    observations.push({
+      code: 'IMPLEMENTED_UNDOCUMENTED',
+      severity: 'warning',
+      count: undoc,
+      messageAr: `${undoc} زيارة منفذة بدون توثيق من مدير الفرع`,
+      messageEn: `${undoc} implemented visits are still undocumented`,
+    });
+  }
+
+  // ── 5. Regions with < 50% completion (min sample = 5 visits) ───────
+  const regionStats = new Map();
+  for (const inst of instances) {
+    const r = inst.scheduledVisit.regionScheduling?.region;
+    if (!r) continue;
+    const s = regionStats.get(r) || { scheduled: 0, implemented: 0 };
+    s.scheduled += 1;
+    if (inst.status === 'IMPLEMENTED') s.implemented += 1;
+    regionStats.set(r, s);
+  }
+  for (const [region, s] of regionStats) {
+    // Guard: tiny samples (< 5 visits) produce noisy %'s — skip them.
+    if (s.scheduled < 5) continue;
+    const rt = rate(s.implemented, s.scheduled);
+    if (rt < 50) {
+      observations.push({
+        code: 'LOW_COMPLETION_REGION',
+        severity: 'critical',
+        count: rt,
+        messageAr: `منطقة ${region} نسبة الإنجاز ${rt}% — أقل من المستهدف`,
+        messageEn: `Region ${region} completion is ${rt}% — below target`,
+        data: { region, completionRate: rt, scheduled: s.scheduled },
+      });
+    }
+  }
+
+  return observations;
 };
 
 /**
@@ -1168,6 +1303,7 @@ const getOverallSummary = async ({ year, month }) => {
     implemented,
     unimplemented: scheduled - implemented,
     completionRate: rate(implemented, scheduled),
+    observations: computeObservations(instances),
   };
 };
 
