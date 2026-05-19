@@ -76,6 +76,21 @@ const listBranchesQuerySchema = Joi.object({
 });
 
 /**
+ * GET /manager/branches/photos.zip — FRD §3.5.2 / §4.6.2.
+ *
+ * `companyName` is REQUIRED (unlike the list/export schema) since the
+ * FRD scopes the bulk download to "all branches belonging to the
+ * same company". `visitType` is the optional refinement that lets
+ * the admin grab just V1 / V2 / V3 / V4 photos across that company.
+ */
+const downloadPhotosZipQuerySchema = Joi.object({
+  companyName: Joi.string().trim().min(1).max(100).required(),
+  visitType: Joi.number().integer().min(1).max(4).optional(),
+  year: Joi.number().integer().min(2024).max(2100).optional(),
+  month: Joi.number().integer().min(1).max(12).optional(),
+});
+
+/**
  * GET /manager/reports/by-company query schema — FRD §3.6.2.
  * companyName is the only filter the FRD lists; year/month default to
  * the current UTC month if omitted.
@@ -207,6 +222,7 @@ module.exports = {
   listTeamsQuerySchema,
   idParamSchema,
   listBranchesQuerySchema,
+  downloadPhotosZipQuerySchema,
   reportByCompanyQuerySchema,
   listCustomersQuerySchema,
   listDailyVisitsQuerySchema,

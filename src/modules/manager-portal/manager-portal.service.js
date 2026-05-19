@@ -1,5 +1,10 @@
+const path = require('path');
+const fs = require('fs');
+const { ZipArchive } = require('archiver');
+
 const { prisma } = require('../../infrastructure/database/prisma');
 const { ApiError } = require('../../utils/ApiError');
+const { logger } = require('../../utils/logger');
 
 /**
  * Manager-facing read API — FRD §3 (Web Application Functionality for
@@ -604,6 +609,175 @@ const listBranchesForExport = async (rawQuery) => {
     visitTypes: visitTypesFor(sv.regionScheduling?.numberOfVisits || 0).join(', '),
     statuses: instancesStatusSummary(sv.visitInstances),
   }));
+};
+
+/**
+ * ============================================
+ * Bulk Store Photos Download — FRD §3.5.2 / §4.6.2
+ * ============================================
+ * "Download store photos for all branches belonging to the same company."
+ * "Also: photos for each visit type across all branches of the company."
+ *
+ * Streams a ZIP straight to the response — never buffers the full
+ * archive in memory, so it scales to hundreds of MB without blowing
+ * the heap.
+ *
+ * Path inside the archive:
+ *   {Company}/{Branch}[-{Category}]/V{1..4}-{YYYY-MM-DD}/{filename}
+ * Slashes / special chars in branch names are normalised to underscores
+ * so the ZIP entries are predictable across OS file systems.
+ */
+
+const PHOTOS_DIR_ABS = path.join(__dirname, '..', '..', '..', 'uploads', 'visits');
+const PHOTO_URL_PREFIX = '/uploads/visits/';
+
+/**
+ * Sanitise a folder name so it's a valid path component on Windows
+ * + macOS + Linux. Lowercases nothing — we keep the original casing
+ * so Arabic/English branch names stay readable when extracted.
+ */
+const safePathSegment = (s) =>
+  String(s || 'unknown')
+    .replace(/[\\/:*?"<>|]+/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 100);
+
+const visitFolderFor = (instance) => {
+  const order = instance.visitOrder; // 1..4
+  const date = instance.scheduledDate
+    ? new Date(instance.scheduledDate).toISOString().slice(0, 10)
+    : 'unknown-date';
+  return `V${order}-${date}`;
+};
+
+/**
+ * GET /manager/branches/photos.zip — FRD §3.5.2 / §4.6.2.
+ *
+ * Required: `companyName`. Optional: `visitType` (1..4), `year`,
+ * `month` (default to current month).
+ *
+ * Sets headers and pipes the archive into `res` directly. Returns
+ * when the archive is finalised; the controller doesn't send a
+ * separate response.
+ */
+const streamBranchPhotosZip = async (rawQuery, res) => {
+  const { companyName, visitType, year, month } = rawQuery;
+
+  if (!companyName) {
+    throw ApiError.badRequest('companyName is required');
+  }
+
+  const now = new Date();
+  const y = year ?? now.getUTCFullYear();
+  const m = month ?? now.getUTCMonth() + 1;
+
+  /**
+   * One query, joins all the way to RegionScheduling + photos. We
+   * include only instances that have at least one photo so the ZIP
+   * doesn't carry empty folders.
+   */
+  const instances = await prisma.visitInstance.findMany({
+    where: {
+      deletedAt: null,
+      ...(visitType && { visitOrder: visitType }),
+      scheduledVisit: {
+        deletedAt: null,
+        monthlySchedule: { deletedAt: null, year: y, month: m },
+        regionScheduling: {
+          deletedAt: null,
+          companyName: { contains: companyName, mode: 'insensitive' },
+        },
+      },
+      photos: { some: { deletedAt: null } },
+    },
+    select: {
+      id: true,
+      visitOrder: true,
+      scheduledDate: true,
+      scheduledVisit: {
+        select: {
+          regionScheduling: {
+            select: { companyName: true, branchName: true, categoryName: true },
+          },
+        },
+      },
+      photos: {
+        where: { deletedAt: null },
+        select: { id: true, url: true },
+        orderBy: { uploadedAt: 'asc' },
+      },
+    },
+  });
+
+  if (instances.length === 0) {
+    throw ApiError.notFound('No photos found for the given filters');
+  }
+
+  /**
+   * Pre-compute response headers BEFORE any archive bytes hit the
+   * wire. Once we start piping we can't change them.
+   */
+  const filename = `${safePathSegment(companyName)}-photos-${y}-${String(m).padStart(2, '0')}${visitType ? `-V${visitType}` : ''}.zip`;
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+  const archive = new ZipArchive({ zlib: { level: 6 } });
+
+  /**
+   * Pipe failure handling: archiver emits 'warning' for missing
+   * files (ENOENT etc.) — we log and continue so one corrupt file
+   * doesn't kill the whole download. Hard errors bubble up.
+   */
+  archive.on('warning', (err) => {
+    logger.warn({ err: err.message }, 'archiver warning (continuing)');
+  });
+  archive.on('error', (err) => {
+    logger.error({ err: err.message }, 'archiver fatal error');
+    res.destroy(err); // bail the response — client will see truncated ZIP
+  });
+
+  archive.pipe(res);
+
+  let photoCount = 0;
+  for (const inst of instances) {
+    const rs = inst.scheduledVisit?.regionScheduling;
+    const branchFolder =
+      [rs?.branchName, rs?.categoryName].filter(Boolean).join('-') || 'unknown-branch';
+    const folderPath = [
+      safePathSegment(rs?.companyName || companyName),
+      safePathSegment(branchFolder),
+      visitFolderFor(inst),
+    ].join('/');
+
+    for (const photo of inst.photos) {
+      /**
+       * Map the stored URL back to a disk path. URLs look like
+       * `/uploads/visits/<visitInstanceId>/<filename>`; we lop off
+       * the public prefix and join the rest under PHOTOS_DIR_ABS so
+       * absolute / relative differences across machines don't bite.
+       */
+      if (!photo.url || !photo.url.startsWith(PHOTO_URL_PREFIX)) continue;
+      const rel = photo.url.slice(PHOTO_URL_PREFIX.length);
+      const absPath = path.join(PHOTOS_DIR_ABS, rel);
+
+      if (!fs.existsSync(absPath)) {
+        logger.warn({ url: photo.url, absPath }, 'photo file missing on disk — skipped');
+        continue;
+      }
+
+      const name = path.basename(absPath);
+      archive.file(absPath, { name: `${folderPath}/${name}` });
+      photoCount += 1;
+    }
+  }
+
+  logger.info(
+    { companyName, visitType, year: y, month: m, instances: instances.length, photoCount },
+    'Bulk photos ZIP streamed',
+  );
+
+  await archive.finalize();
 };
 
 /**
@@ -1719,6 +1893,7 @@ module.exports = {
   listBranches,
   getBranchDetail,
   listBranchesForExport,
+  streamBranchPhotosZip,
   getMonthlyReportByCompany,
   buildMonthlyReportByCompanyFlatRows,
   listCustomers,

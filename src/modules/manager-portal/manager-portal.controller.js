@@ -191,6 +191,20 @@ const exportBranchesPdf = asyncHandler(async (req, res) => {
 });
 
 /**
+ * GET /manager/branches/photos.zip — FRD §3.5.2 / §4.6.2.
+ *
+ * Streams the archive directly to the response — the service sets
+ * its own Content-Type / Content-Disposition headers and pipes the
+ * archive into `res`, so this handler is intentionally tiny.
+ *
+ * `req.validatedQuery` carries `companyName` (required), optional
+ * `visitType` / `year` / `month`.
+ */
+const downloadBranchPhotosZip = asyncHandler(async (req, res) => {
+  await service.streamBranchPhotosZip(req.validatedQuery || {}, res);
+});
+
+/**
  * GET /manager/reports/by-company — FRD §3.6.1.
  * Returns the full per-company → per-branch breakdown plus company-level
  * and grand totals (visits, implemented, remaining, documented, undocumented).
@@ -397,6 +411,7 @@ module.exports = {
   branchDetail,
   exportBranchesXlsx,
   exportBranchesPdf,
+  downloadBranchPhotosZip,
   reportByCompany,
   exportReportByCompanyXlsx,
   exportReportByCompanyPdf,

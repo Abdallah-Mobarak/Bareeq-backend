@@ -9,6 +9,7 @@ const {
   listTeamsQuerySchema,
   idParamSchema,
   listBranchesQuerySchema,
+  downloadPhotosZipQuerySchema,
   reportByCompanyQuerySchema,
   listCustomersQuerySchema,
   listDailyVisitsQuerySchema,
@@ -100,6 +101,19 @@ router.get(
   requirePermission('EXPORT_IMPLEMENTED_BRANCHES'),
   validate(listBranchesQuerySchema, 'query'),
   controller.exportBranchesPdf,
+);
+
+/**
+ * Bulk store-photos download — FRD §3.5.2 / §4.6.2.
+ * Streams a ZIP of every photo for all branches of the given
+ * companyName, optionally narrowed to a single visit type.
+ * Gated by the same permission as the regular branch exports.
+ */
+router.get(
+  '/branches/photos.zip',
+  requirePermission('EXPORT_IMPLEMENTED_BRANCHES'),
+  validate(downloadPhotosZipQuerySchema, 'query'),
+  controller.downloadBranchPhotosZip,
 );
 router.get(
   '/branches/:id',
