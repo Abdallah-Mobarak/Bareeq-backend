@@ -69,6 +69,19 @@ const listBranchesQuerySchema = Joi.object({
   month: Joi.number().integer().min(1).max(12).optional(),
 
   /**
+   * Restrict to branches where the supervisor has acted on at least
+   * one visit — i.e. at least one VisitInstance has status != REMAINING.
+   *
+   * `?hasAction=true`  → exclude branches still showing all "No Action".
+   * `?hasAction=false` → only branches that are still fully untouched.
+   * omitted             → return everything (current default).
+   *
+   * Useful when the BA wants "branches with action" vs. the full
+   * scheduled list — both are valid views over the same data.
+   */
+  hasAction: Joi.boolean().optional(),
+
+  /**
    * Row selection for /branches/export.* — `id` here is the
    * ScheduledVisit id (matches the row id surfaced by /manager/branches).
    */

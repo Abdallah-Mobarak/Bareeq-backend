@@ -335,6 +335,7 @@ const buildBranchesWhere = (query) => {
     year,
     month,
     ids,
+    hasAction,
   } = query;
 
   const where = {
@@ -371,16 +372,39 @@ const buildBranchesWhere = (query) => {
     ];
   }
 
-  if (dateFrom || dateTo) {
+  /**
+   * VisitInstance-relation filters compose into a single `some` block.
+   * Multiple criteria in one `some` mean "at least one visit instance
+   * satisfies ALL these conditions simultaneously" — that's the right
+   * semantic for the common cases (date range + acted-on).
+   */
+  const visitInstanceFilters = {};
+  if (dateFrom && dateTo) {
+    visitInstanceFilters.scheduledDate = {
+      gte: new Date(dateFrom),
+      lte: new Date(dateTo),
+    };
+  } else if (dateFrom) {
+    visitInstanceFilters.scheduledDate = { gte: new Date(dateFrom) };
+  } else if (dateTo) {
+    visitInstanceFilters.scheduledDate = { lte: new Date(dateTo) };
+  }
+
+  if (hasAction === true) {
+    // "Acted on" = at least one non-REMAINING visit instance.
+    visitInstanceFilters.status = { not: 'REMAINING' };
+  } else if (hasAction === false) {
+    // Inverse: keep ONLY branches where every visit is still REMAINING.
+    // Prisma can't express "every" directly, so we negate: exclude
+    // branches that have ANY non-REMAINING visit.
     where.visitInstances = {
-      some: {
-        deletedAt: null,
-        ...(dateFrom && dateTo
-          ? { scheduledDate: { gte: new Date(dateFrom), lte: new Date(dateTo) } }
-          : dateFrom
-            ? { scheduledDate: { gte: new Date(dateFrom) } }
-            : { scheduledDate: { lte: new Date(dateTo) } }),
-      },
+      none: { deletedAt: null, status: { not: 'REMAINING' } },
+    };
+  }
+
+  if (Object.keys(visitInstanceFilters).length > 0) {
+    where.visitInstances = {
+      some: { deletedAt: null, ...visitInstanceFilters },
     };
   }
 
