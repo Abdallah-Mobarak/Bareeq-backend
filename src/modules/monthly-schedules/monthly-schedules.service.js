@@ -2,6 +2,7 @@ const { prisma } = require('../../infrastructure/database/prisma');
 const { ApiError } = require('../../utils/ApiError');
 const { logger } = require('../../utils/logger');
 const { distributeVisitDates } = require('../../utils/scheduleDistribution');
+const { notify } = require('../notifications/notifications.service');
 
 /**
  * MonthlySchedule — produced by the "Assign Supervisor" flow described
@@ -251,6 +252,60 @@ const createSchedule = async ({ supervisorId, applyToAllDate, scheduledVisits })
     },
     'Monthly schedule created',
   );
+
+  /**
+   * Notifications — FRD §1.5 (supervisor: "new schedule assigned") and
+   * §2.5 (company: "monthly schedule published by the admin"). Wrapped so a
+   * notification failure can never roll back an already-committed schedule.
+   */
+  try {
+    await notify({
+      userId: supervisorId,
+      type: 'SCHEDULE_PUBLISHED',
+      titleAr: 'تم إسناد جدول جديد',
+      titleEn: 'New schedule assigned',
+      bodyAr: `تمت إضافة جدول زيارات جديد لشهر ${month}/${year} إلى حسابك.`,
+      bodyEn: `A new visit schedule for ${month}/${year} has been added to your account.`,
+      data: { scheduleId: schedule.id, year, month },
+    });
+
+    const companyNames = [
+      ...new Set(
+        schedule.scheduledVisits
+          .map((sv) => sv.regionScheduling?.companyName)
+          .filter(Boolean),
+      ),
+    ];
+    if (companyNames.length > 0) {
+      const companyUsers = await prisma.user.findMany({
+        where: {
+          role: 'COMPANY_USER',
+          deletedAt: null,
+          company: { nameAr: { in: companyNames } },
+        },
+        select: { id: true },
+      });
+      await Promise.all(
+        companyUsers.map((u) =>
+          notify({
+            userId: u.id,
+            type: 'SCHEDULE_PUBLISHED',
+            titleAr: 'تم نشر الجدول الشهري',
+            titleEn: 'Monthly schedule published',
+            bodyAr: `تم نشر الجدول الشهري لشهر ${month}/${year} من قبل الإدارة.`,
+            bodyEn: `The monthly schedule for ${month}/${year} has been published by the admin.`,
+            data: { scheduleId: schedule.id, year, month },
+          }),
+        ),
+      );
+    }
+  } catch (err) {
+    logger.error(
+      { err: err.message, scheduleId: schedule.id },
+      'Schedule notifications failed — schedule still created',
+    );
+  }
+
   return serializeSchedule(schedule);
 };
 

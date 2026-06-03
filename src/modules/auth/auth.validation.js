@@ -30,4 +30,34 @@ const refreshTokenSchema = Joi.object({
   refreshToken: Joi.string().trim().min(32).max(256).required(),
 });
 
-module.exports = { loginSchema, refreshTokenSchema };
+/**
+ * PATCH /auth/me — self-service profile edit. Every field is optional but at
+ * least one must be present (.min(1)). `preferredLanguage` drives the App
+ * Settings → Arabic/English toggle on the mobile profile.
+ */
+const updateMeSchema = Joi.object({
+  nameAr: Joi.string().trim().min(1).max(120),
+  nameEn: Joi.string().trim().max(120).allow(null, ''),
+  email: Joi.string().trim().email({ tlds: { allow: false } }).max(100),
+  phone: Joi.string().trim().min(3).max(30).allow(null, ''),
+  preferredLanguage: Joi.string().valid('AR', 'EN'),
+}).min(1);
+
+/** POST /auth/me/change-password — current + new password. */
+const changePasswordSchema = Joi.object({
+  currentPassword: Joi.string().min(6).max(100).required(),
+  newPassword: Joi.string().min(6).max(100).required(),
+});
+
+/** DELETE /auth/me — password confirmation guards the destructive action. */
+const deleteAccountSchema = Joi.object({
+  password: Joi.string().min(6).max(100).required(),
+});
+
+module.exports = {
+  loginSchema,
+  refreshTokenSchema,
+  updateMeSchema,
+  changePasswordSchema,
+  deleteAccountSchema,
+};

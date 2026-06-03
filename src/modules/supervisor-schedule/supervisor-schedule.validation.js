@@ -47,7 +47,23 @@ const idParamSchema = Joi.object({
   id: Joi.string().required(),
 });
 
+/**
+ * GET /supervisor/stats — Monthly Time Distribution filters (FRD §1.3.2):
+ * company name / visit type / city / start-end date. Defaults to the current
+ * month when year/month are omitted.
+ */
+const statsQuerySchema = Joi.object({
+  companyName: Joi.string().trim().max(200).optional().allow(''),
+  city: Joi.string().trim().max(150).optional().allow(''),
+  visitType: Joi.number().integer().min(1).max(4).optional(),
+  dateFrom: Joi.date().iso().optional(),
+  dateTo: Joi.date().iso().optional(),
+  year: Joi.number().integer().min(2024).max(2100).optional(),
+  month: Joi.number().integer().min(1).max(12).optional(),
+});
+
 module.exports = {
   listMyBranchesQuerySchema,
   idParamSchema,
+  statsQuerySchema,
 };

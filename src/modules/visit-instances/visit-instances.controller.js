@@ -22,7 +22,7 @@ const notImplemented = asyncHandler(async (req, res) => {
 });
 
 const complete = asyncHandler(async (req, res) => {
-  const data = await service.completeVisit(req.params.id, req.user.id);
+  const data = await service.completeVisit(req.params.id, req.user.id, req.body);
   res.json({ success: true, data });
 });
 

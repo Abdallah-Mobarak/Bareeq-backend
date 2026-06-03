@@ -167,6 +167,18 @@ const analysisQuerySchema = Joi.object({
 });
 
 /**
+ * GET /manager/reports/overview/export.{xlsx,pdf} query schema.
+ *
+ * Union of summary + regional params — the export combines both views
+ * into one file, so it accepts whatever either underlying endpoint does.
+ */
+const overviewExportQuerySchema = Joi.object({
+  year: Joi.number().integer().min(2024).max(2100).optional(),
+  month: Joi.number().integer().min(1).max(12).optional(),
+  region: Joi.string().trim().max(100).optional(),
+});
+
+/**
  * Additional Tasks schemas — FRD §3.9.
  *
  * `createAdditionalTaskSchema` is the strict version (required fields).
@@ -242,6 +254,7 @@ module.exports = {
   summaryQuerySchema,
   regionalQuerySchema,
   analysisQuerySchema,
+  overviewExportQuerySchema,
   createAdditionalTaskSchema,
   updateAdditionalTaskSchema,
   listAdditionalTasksQuerySchema,

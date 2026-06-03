@@ -32,6 +32,30 @@ const MONTHLY_REPORT_EXPORT_COLUMNS = [
 ];
 
 /**
+ * Single-branch visit report (FRD §2.2.5 "Download PDF"): one row per visit
+ * type with its status, documentation, timing, and documentation answers.
+ */
+const BRANCH_REPORT_COLUMNS = [
+  { header: 'Visit', key: 'visitType', width: 8 },
+  { header: 'Status', key: 'status', width: 16 },
+  { header: 'Documentation', key: 'documentation', width: 16 },
+  { header: 'Start', key: 'start', width: 18 },
+  { header: 'End', key: 'end', width: 18 },
+  { header: 'Duration', key: 'duration', width: 12 },
+  { header: 'Job #', key: 'jobNumber', width: 12 },
+  { header: 'Rating', key: 'rating', width: 8 },
+  { header: 'Comments', key: 'comments', width: 30 },
+];
+
+const fmtDateTime = (d) => (d ? new Date(d).toISOString().slice(0, 16).replace('T', ' ') : '');
+const fmtDuration = (s) => {
+  if (s === null || s === undefined) return '';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+};
+
+/**
  * GET /company/my-profile
  * Returns the profile of the authenticated COMPANY_USER or ACCOUNTANT_MANAGER.
  * Shape differs slightly per role — see service docs.
@@ -41,6 +65,19 @@ const MONTHLY_REPORT_EXPORT_COLUMNS = [
  */
 const myProfile = asyncHandler(async (req, res) => {
   const data = await service.getMyProfile(req.user.id);
+  res.json({ success: true, data });
+});
+
+/**
+ * GET /company/dashboard
+ * Home-screen summary + per-branch breakdown for the authenticated user:
+ * total branches, per-status visit counts, documentation counts,
+ * acted-on vs no-action branch counts, and the full branches list.
+ * Optional ?dateFrom / ?dateTo narrow every figure (except totalBranches)
+ * to visits scheduled in that range. All scoped to the caller.
+ */
+const dashboard = asyncHandler(async (req, res) => {
+  const data = await service.getMyDashboardStats(req.user.id, req.validatedQuery);
   res.json({ success: true, data });
 });
 
@@ -67,6 +104,37 @@ const listBranches = asyncHandler(async (req, res) => {
  * FRD §2.2.5 (Companies — View Branch Details)
  * FRD FR-39 → FR-48 (Accountant Manager — same view, scoped)
  */
+/**
+ * GET /company/branches/:id/export.pdf — FRD §2.2.5 "Download PDF".
+ * Renders one branch's visit report (per-visit-type status, documentation,
+ * timing, job number, rating, comments) as a printable PDF. Scoped via the
+ * same getMyBranchDetail used by the JSON detail, so an AM only ever exports
+ * a branch within their assigned scope (404 otherwise).
+ */
+const exportBranchPdf = asyncHandler(async (req, res) => {
+  const detail = await service.getMyBranchDetail(req.user.id, req.params.id);
+  const rs = detail.regionScheduling;
+  const rows = detail.instances.map((i) => ({
+    visitType: `V${i.visitOrder}`,
+    status: i.status,
+    documentation: i.documentationStatus,
+    start: fmtDateTime(i.startedAt),
+    end: fmtDateTime(i.endedAt),
+    duration: fmtDuration(i.durationSeconds),
+    jobNumber: i.jobNumber || '',
+    rating: i.rating !== null && i.rating !== undefined ? String(i.rating) : '',
+    comments: i.comments || '',
+  }));
+
+  const buffer = await buildPdf({
+    title: `Branch Visit Report — ${rs.brandName || rs.branchName}`,
+    subtitle: `Code: ${rs.code || '—'} • Branch #: ${rs.branchNumber || '—'} • City: ${rs.city || '—'} • Region: ${rs.region || '—'} • Address: ${rs.address || '—'}`,
+    columns: BRANCH_REPORT_COLUMNS,
+    rows,
+  });
+  pdfResponse(res, buffer, `branch-${rs.code || detail.id}-report.pdf`);
+});
+
 const branchDetail = asyncHandler(async (req, res) => {
   const data = await service.getMyBranchDetail(req.user.id, req.params.id);
   res.json({ success: true, data });
@@ -178,8 +246,10 @@ const listMyMessages = asyncHandler(async (req, res) => {
 
 module.exports = {
   myProfile,
+  dashboard,
   listBranches,
   branchDetail,
+  exportBranchPdf,
   monthlyReport,
   exportBranchesXlsx,
   exportBranchesPdf,

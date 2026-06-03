@@ -45,6 +45,16 @@ const config = {
   logging: {
     level: optional('LOG_LEVEL', 'info'),
   },
+
+  email: {
+    from: optional('EMAIL_FROM', 'Bareeq <noreply@bareeq.sa>'),
+    smtp: {
+      host: optional('SMTP_HOST', ''),
+      port: parseInt(optional('SMTP_PORT', '587'), 10),
+      user: optional('SMTP_USER', ''),
+      password: optional('SMTP_PASSWORD', ''),
+    },
+  },
 };
 
 config.isDevelopment = config.nodeEnv === 'development';

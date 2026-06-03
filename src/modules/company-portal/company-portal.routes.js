@@ -6,6 +6,7 @@ const requireRole = require('../../middlewares/requireRole');
 const controller = require('./company-portal.controller');
 const {
   idParamSchema,
+  dashboardQuerySchema,
   listBranchesQuerySchema,
   monthlyReportQuerySchema,
   submitContactSchema,
@@ -27,6 +28,17 @@ const router = Router();
 router.use(requireAuth, requireRole('COMPANY_USER', 'ACCOUNTANT_MANAGER'));
 
 router.get('/my-profile', controller.myProfile);
+
+/**
+ * Home-screen summary + per-branch breakdown, scoped to the caller.
+ * Optional ?dateFrom / ?dateTo (inclusive, on the visit's scheduledDate)
+ * narrow every figure except totalBranches to that period.
+ */
+router.get(
+  '/dashboard',
+  validate(dashboardQuerySchema, 'query'),
+  controller.dashboard,
+);
 
 router.get(
   '/branches',
@@ -65,6 +77,17 @@ router.get(
   '/monthly-report/export.pdf',
   validate(monthlyReportQuerySchema, 'query'),
   controller.exportMonthlyReportPdf,
+);
+
+/**
+ * Single-branch visit report as PDF (FRD §2.2.5 "Download PDF"). Mounted
+ * before the bare /branches/:id so the literal ".../export.pdf" suffix is
+ * matched by this handler, not swallowed as part of :id.
+ */
+router.get(
+  '/branches/:id/export.pdf',
+  validate(idParamSchema, 'params'),
+  controller.exportBranchPdf,
 );
 
 router.get(

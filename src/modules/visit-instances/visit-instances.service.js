@@ -4,6 +4,7 @@ const path = require('node:path');
 const { prisma } = require('../../infrastructure/database/prisma');
 const { ApiError } = require('../../utils/ApiError');
 const { logger } = require('../../utils/logger');
+const { notify } = require('../notifications/notifications.service');
 
 /**
  * Visit execution — FRD §1.2.3.1 (mobile supervisor flow).
@@ -110,6 +111,8 @@ const serialize = (i) => ({
   startLongitude: i.startLongitude,
   lockedAt: i.lockedAt,
   notImplementedReasonId: i.notImplementedReasonId,
+  notImplementedNote: i.notImplementedNote,
+  visitNote: i.visitNote,
   branchManagerPhone: i.branchManagerPhone,
   jobNumber: i.jobNumber,
   rating: i.rating,
@@ -130,6 +133,59 @@ const serialize = (i) => ({
     done: tc.done,
   })),
 });
+
+/**
+ * FRD §2.5 — when a supervisor changes a branch visit's status, notify the
+ * owning company ("Branch visit status changed to Final Closed", etc.).
+ * Best-effort: a notification failure must never roll back the visit action.
+ * The company is matched by `company.nameAr === regionScheduling.companyName`
+ * (the same string linkage the company portal uses to scope its data).
+ */
+const VISIT_STATUS_COPY = {
+  IMPLEMENTED: { ar: 'تم تنفيذ زيارة فرع', en: 'Branch visit implemented' },
+  NOT_IMPLEMENTED: { ar: 'زيارة فرع غير منفذة', en: 'Branch visit marked Not Implemented' },
+  FINAL_CLOSED: { ar: 'تم إغلاق فرع نهائياً', en: 'Branch visit marked Final Closed' },
+};
+
+const notifyCompanyOfVisitStatus = async (instance) => {
+  try {
+    const rs = instance?.scheduledVisit?.regionScheduling;
+    const copy = VISIT_STATUS_COPY[instance?.status];
+    if (!rs?.companyName || !copy) {
+      return;
+    }
+
+    const brand = [rs.branchName, rs.categoryName].filter(Boolean).join(' — ');
+    const companyUsers = await prisma.user.findMany({
+      where: { role: 'COMPANY_USER', deletedAt: null, company: { nameAr: rs.companyName } },
+      select: { id: true },
+    });
+
+    await Promise.all(
+      companyUsers.map((u) =>
+        notify({
+          userId: u.id,
+          type: 'VISIT_STATUS_CHANGED',
+          titleAr: copy.ar,
+          titleEn: copy.en,
+          bodyAr: `الفرع ${brand} — الزيارة V${instance.visitOrder}.`,
+          bodyEn: `Branch ${brand} — visit V${instance.visitOrder}.`,
+          data: {
+            regionSchedulingId: rs.id,
+            visitInstanceId: instance.id,
+            visitOrder: instance.visitOrder,
+            status: instance.status,
+          },
+        }),
+      ),
+    );
+  } catch (err) {
+    logger.error(
+      { err: err.message, visitInstanceId: instance?.id },
+      'Visit-status notification failed — visit action still saved',
+    );
+  }
+};
 
 /**
  * GET /visit-instances/:id
@@ -233,6 +289,7 @@ const finalClosedVisit = async (visitInstanceId, supervisorId) => {
   });
 
   logger.info({ visitInstanceId, supervisorId }, 'Visit final-closed (with cascade)');
+  await notifyCompanyOfVisitStatus(updated);
   return serialize(updated);
 };
 
@@ -241,7 +298,11 @@ const finalClosedVisit = async (visitInstanceId, supervisorId) => {
  * Skip this V with a reason. Reason is required; FE sources from
  * /reasons (admin-managed list).
  */
-const notImplementedVisit = async (visitInstanceId, supervisorId, { notImplementedReasonId }) => {
+const notImplementedVisit = async (
+  visitInstanceId,
+  supervisorId,
+  { notImplementedReasonId, note },
+) => {
   const reason = await prisma.notImplementedReason.findFirst({
     where: { id: notImplementedReasonId, deletedAt: null },
   });
@@ -264,12 +325,14 @@ const notImplementedVisit = async (visitInstanceId, supervisorId, { notImplement
           status: 'NOT_IMPLEMENTED',
           documentationStatus: 'UNDOCUMENTED',
           notImplementedReasonId,
+          notImplementedNote: note ?? null,
           lockedAt: now,
         },
       });
       return loadOwned(visitInstanceId, supervisorId, tx);
     });
     logger.info({ visitInstanceId, supervisorId }, 'Visit marked not-implemented');
+    await notifyCompanyOfVisitStatus(updated);
     return serialize(updated);
   }
 
@@ -277,7 +340,10 @@ const notImplementedVisit = async (visitInstanceId, supervisorId, { notImplement
     const updated = await prisma.$transaction(async (tx) => {
       await tx.visitInstance.update({
         where: { id: visitInstanceId },
-        data: { notImplementedReasonId },
+        data: {
+          notImplementedReasonId,
+          ...(note !== undefined && { notImplementedNote: note || null }),
+        },
       });
       return loadOwned(visitInstanceId, supervisorId, tx);
     });
@@ -295,7 +361,7 @@ const notImplementedVisit = async (visitInstanceId, supervisorId, { notImplement
  * UNDERWAY → IMPLEMENTED. Stops timer, computes duration.
  * Requires at least one task checked done (§2.3).
  */
-const completeVisit = async (visitInstanceId, supervisorId) => {
+const completeVisit = async (visitInstanceId, supervisorId, { note } = {}) => {
   const inst = await loadOwned(visitInstanceId, supervisorId);
   ensureUnderway(inst);
 
@@ -318,6 +384,7 @@ const completeVisit = async (visitInstanceId, supervisorId) => {
         status: 'IMPLEMENTED',
         endedAt: now,
         durationSeconds,
+        ...(note !== undefined && { visitNote: note || null }),
         lockedAt: now,
       },
     });
@@ -325,6 +392,7 @@ const completeVisit = async (visitInstanceId, supervisorId) => {
   });
 
   logger.info({ visitInstanceId, supervisorId, durationSeconds }, 'Visit completed');
+  await notifyCompanyOfVisitStatus(updated);
   return serialize(updated);
 };
 

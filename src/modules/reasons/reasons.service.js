@@ -100,4 +100,26 @@ const deleteReason = async (id) => {
   logger.info({ reasonId: id }, 'Reason soft-deleted');
 };
 
-module.exports = { createReason, listReasons, getReason, updateReason, deleteReason };
+/**
+ * Flat list of all active reasons — for the supervisor mobile picker
+ * (FRD §1.2.3.1 / §1.4.4.1 "select a reason from a drop-down list managed
+ * by the admin"). No pagination: the list is short and the mobile app
+ * renders it as a dropdown in one shot.
+ */
+const listActiveReasons = async () => {
+  const items = await prisma.notImplementedReason.findMany({
+    where: { deletedAt: null },
+    orderBy: { titleAr: 'asc' },
+    select: { id: true, titleAr: true, titleEn: true },
+  });
+  return items;
+};
+
+module.exports = {
+  createReason,
+  listReasons,
+  getReason,
+  updateReason,
+  deleteReason,
+  listActiveReasons,
+};

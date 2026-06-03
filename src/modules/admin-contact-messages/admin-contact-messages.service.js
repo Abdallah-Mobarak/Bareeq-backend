@@ -1,5 +1,7 @@
 const { prisma } = require('../../infrastructure/database/prisma');
 const { ApiError } = require('../../utils/ApiError');
+const { logger } = require('../../utils/logger');
+const { notify } = require('../notifications/notifications.service');
 
 /**
  * Admin-side Contact-Us management — FRD §4.12.
@@ -10,9 +12,8 @@ const { ApiError } = require('../../utils/ApiError');
  *   3. Admin posts a reply → status flips to REPLIED
  *   4. User pulls /company/contact/my-messages and sees the reply
  *
- * No notifications fired yet — that's a Sprint 3 cross-cutting concern.
- * For now the user has to poll. Adding the notification hook later is
- * one line in `replyToMessage` once the notifications module exists.
+ * On reply, `replyToMessage` fires a CONTACT_REPLIED notification to the
+ * original sender (FRD §2.5 / FR-79) so they don't have to poll.
  */
 
 const serializeMessage = (m) => ({
@@ -153,6 +154,30 @@ const replyToMessage = async (adminId, id, { reply }) => {
       repliedBy: { select: { id: true, nameAr: true, nameEn: true } },
     },
   });
+
+  /**
+   * FRD §2.5 / FR-79: notify the original sender that the admin replied.
+   * Fire-and-forget — a failed notification must not fail the reply itself.
+   */
+  if (updated.user?.id) {
+    try {
+      await notify({
+        userId: updated.user.id,
+        type: 'CONTACT_REPLIED',
+        titleAr: 'رد الإدارة على رسالتك',
+        titleEn: 'Admin replied to your message',
+        bodyAr: 'قام المسؤول بالرد على رسالتك في قسم اتصل بنا.',
+        bodyEn: 'An administrator has responded to your contact message.',
+        data: { contactMessageId: updated.id },
+      });
+    } catch (err) {
+      logger.error(
+        { err: err.message, contactMessageId: updated.id },
+        'Contact-reply notification failed — reply still saved',
+      );
+    }
+  }
+
   return serializeMessage(updated);
 };
 

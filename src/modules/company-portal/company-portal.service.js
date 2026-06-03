@@ -637,6 +637,231 @@ const getMyMonthlyReport = async (userId, { year, month }) => {
 };
 
 /**
+ * Every VisitStatus value, in display order. Source of truth for the
+ * dashboard's zero-fill so a status with no rows still renders a "0"
+ * card instead of vanishing. Mirrors the Prisma `VisitStatus` enum —
+ * keep in sync if the enum ever grows.
+ */
+const VISIT_STATUS_KEYS = [
+  'REMAINING', // no action yet
+  'UNDERWAY', // started, not finished
+  'IMPLEMENTED', // completed
+  'NOT_IMPLEMENTED', // skipped with a reason ("not visited")
+  'FINAL_CLOSED', // branch permanently closed
+];
+
+const DOCUMENTATION_KEYS = ['DOCUMENTED', 'UNDOCUMENTED'];
+
+/**
+ * Safety cap on how many VisitInstance rows the dashboard loads in one
+ * shot. Every figure below (counts AND the branches list) is derived from
+ * this single fetch, so the cap bounds both memory and response size. A
+ * company-scoped query realistically returns a few hundred rows (dozens of
+ * branches × up to 4 visits × a handful of months); 20k is far past that
+ * while still protecting us from a pathological tenant. If we ever hit it,
+ * switch to DB-side groupBy for the counts and paginate the list.
+ */
+const DASHBOARD_INSTANCE_LIMIT = 20000;
+
+/**
+ * Build the `scheduledDate` range clause shared by the dashboard's date
+ * filter. Returns `undefined` when no bound is given so callers can spread
+ * it conditionally. Matches the semantics used by /company/branches and
+ * /manager/branches (filter on the instance's scheduledDate).
+ */
+const scheduledDateRange = ({ dateFrom, dateTo }) => {
+  if (dateFrom && dateTo) return { gte: new Date(dateFrom), lte: new Date(dateTo) };
+  if (dateFrom) return { gte: new Date(dateFrom) };
+  if (dateTo) return { lte: new Date(dateTo) };
+  return undefined;
+};
+
+/**
+ * GET /company/dashboard — home-screen summary + per-branch breakdown.
+ *
+ * Scoped via `scopeForUser` so a COMPANY_USER sees their whole company and
+ * an ACCOUNTANT_MANAGER sees only their assigned branches (same boundary as
+ * every other endpoint here).
+ *
+ * Optional date filter (`dateFrom` / `dateTo`, inclusive, on the visit's
+ * scheduledDate) answers "in this period, how many branches were acted on?".
+ * When given, EVERY figure except `totalBranches` is restricted to visits
+ * inside the range; a branch only appears in the list / action counts if it
+ * has at least one visit in the range.
+ *
+ * Returns:
+ *   • totalBranches    → all branches the user can see (RegionScheduling
+ *                        rows in scope). ALL-TIME on purpose — it's the
+ *                        stable "your company has N branches" figure and is
+ *                        NOT narrowed by the date filter, unlike everything
+ *                        else here.
+ *   • totalVisits      → visit instances in scope (and in the date range).
+ *   • visitsByStatus   → one count per VisitStatus, zero-filled so the UI
+ *                        always renders a fixed set of cards.
+ *   • documentation    → DOCUMENTED / UNDOCUMENTED counts (orthogonal to
+ *                        status — a visit can be IMPLEMENTED yet still
+ *                        UNDOCUMENTED).
+ *   • branchesByAction → { withAction, noAction } over the branches that
+ *                        have ≥1 visit in the considered set. "withAction" =
+ *                        the branch has ≥1 visit whose status != REMAINING
+ *                        (same definition as the /manager/branches
+ *                        ?hasAction filter); "noAction" = every one of its
+ *                        visits is still REMAINING. The two sum to the
+ *                        number of branches in `branches`.
+ *   • branches         → one entry per distinct branch: companyName,
+ *                        address, brandName, firstVisitDate, hasAction, and
+ *                        the full per-visit status list. Visits across
+ *                        multiple months are merged under the branch (each
+ *                        carries its own scheduledDate so they stay
+ *                        distinguishable).
+ *   • completedVisits / pendingVisits → aliases for the original two cards.
+ *
+ * Implementation note: we fetch the in-scope instances ONCE and derive every
+ * figure in JS. One source of truth means the list and the counts can never
+ * disagree (e.g. branchesByAction.withAction always matches the branches you
+ * can see flagged hasAction:true).
+ */
+const getMyDashboardStats = async (userId, rawQuery = {}) => {
+  const user = await loadUserWithCompany(userId);
+  const scope = await scopeForUser(user);
+
+  // The role scope is expressed against RegionScheduling; the branch count
+  // applies it directly, the visit query reaches it through the join.
+  const branchScope = { deletedAt: null, ...scope };
+  const dateClause = scheduledDateRange(rawQuery);
+
+  const visitWhere = {
+    deletedAt: null,
+    ...(dateClause && { scheduledDate: dateClause }),
+    scheduledVisit: {
+      deletedAt: null,
+      monthlySchedule: { deletedAt: null },
+      regionScheduling: branchScope,
+    },
+  };
+
+  const [totalBranches, instances] = await prisma.$transaction([
+    // ALL-TIME, never date-filtered — see doc comment.
+    prisma.regionScheduling.count({ where: branchScope }),
+    prisma.visitInstance.findMany({
+      where: visitWhere,
+      take: DASHBOARD_INSTANCE_LIMIT,
+      orderBy: { scheduledDate: 'asc' },
+      select: {
+        visitOrder: true,
+        scheduledDate: true,
+        status: true,
+        documentationStatus: true,
+        scheduledVisit: {
+          select: {
+            firstVisitDate: true,
+            regionScheduling: {
+              select: {
+                id: true,
+                companyName: true,
+                branchName: true,
+                categoryName: true,
+                address: true,
+                city: true,
+                region: true,
+                numberOfVisits: true,
+              },
+            },
+          },
+        },
+      },
+    }),
+  ]);
+
+  // Zero-filled accumulators so every card key is always present.
+  const visitsByStatus = Object.fromEntries(VISIT_STATUS_KEYS.map((k) => [k, 0]));
+  const documentation = Object.fromEntries(DOCUMENTATION_KEYS.map((k) => [k, 0]));
+  const branchesMap = new Map();
+  let totalVisits = 0;
+
+  for (const inst of instances) {
+    const sv = inst.scheduledVisit;
+    const rs = sv?.regionScheduling;
+    if (!rs) continue; // defensive — the joins above guarantee it exists
+
+    totalVisits += 1;
+    if (visitsByStatus[inst.status] !== undefined) visitsByStatus[inst.status] += 1;
+    if (documentation[inst.documentationStatus] !== undefined) {
+      documentation[inst.documentationStatus] += 1;
+    }
+
+    let branch = branchesMap.get(rs.id);
+    if (!branch) {
+      branch = {
+        regionSchedulingId: rs.id,
+        companyName: rs.companyName,
+        branchName: rs.branchName,
+        categoryName: rs.categoryName,
+        // FRD §2.2.1 — "Brand name (Branch name + Category name)".
+        brandName: [rs.branchName, rs.categoryName].filter(Boolean).join(' — '),
+        address: rs.address,
+        city: rs.city,
+        region: rs.region,
+        numberOfVisits: rs.numberOfVisits,
+        firstVisitDate: sv.firstVisitDate,
+        hasAction: false,
+        visits: [],
+      };
+      branchesMap.set(rs.id, branch);
+    }
+
+    // Earliest scheduled visit date wins across this branch's months.
+    if (sv.firstVisitDate && (!branch.firstVisitDate || sv.firstVisitDate < branch.firstVisitDate)) {
+      branch.firstVisitDate = sv.firstVisitDate;
+    }
+    if (inst.status !== 'REMAINING') branch.hasAction = true;
+
+    branch.visits.push({
+      visitOrder: inst.visitOrder,
+      scheduledDate: inst.scheduledDate,
+      status: inst.status,
+      documentationStatus: inst.documentationStatus,
+    });
+  }
+
+  const branches = Array.from(branchesMap.values());
+  for (const branch of branches) {
+    branch.visits.sort(
+      (a, b) =>
+        a.visitOrder - b.visitOrder ||
+        new Date(a.scheduledDate) - new Date(b.scheduledDate),
+    );
+  }
+  // Stable, predictable ordering for the UI and tests.
+  branches.sort(
+    (a, b) =>
+      (a.brandName || '').localeCompare(b.brandName || '') ||
+      (a.city || '').localeCompare(b.city || ''),
+  );
+
+  const withAction = branches.filter((b) => b.hasAction).length;
+
+  return {
+    totalBranches,
+    totalVisits,
+    visitsByStatus,
+    documentation,
+    branchesByAction: {
+      withAction,
+      noAction: branches.length - withAction,
+    },
+    // Aliases for the original summary cards (kept for backward compat).
+    completedVisits: visitsByStatus.IMPLEMENTED,
+    pendingVisits: visitsByStatus.REMAINING,
+    dateRange: {
+      from: rawQuery.dateFrom ?? null,
+      to: rawQuery.dateTo ?? null,
+    },
+    branches,
+  };
+};
+
+/**
  * Flat status summary string for a ScheduledVisit row's instances.
  * Returns "V1: IMPLEMENTED, V2: UNDERWAY, V3: REMAINING, ..." — perfect
  * for a single Excel/PDF cell. We use the raw enum values so the file
@@ -817,6 +1042,7 @@ const serializeContactMessage = (row) => ({
 
 module.exports = {
   getMyProfile,
+  getMyDashboardStats,
   listMyBranches,
   getMyBranchDetail,
   getMyMonthlyReport,

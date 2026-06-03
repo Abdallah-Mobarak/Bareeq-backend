@@ -148,6 +148,15 @@ enum NotificationType {
   // Dispute lifecycle (FRD §3.6 marketplace)
   DISPUTE_FILED // admin received a new complaint from a user
   DISPUTE_RESPONDED // user received an admin response to their dispute
+
+  // Management system — schedule & visit lifecycle (FRD §1.5 / §2.5)
+  SCHEDULE_PUBLISHED // admin published/assigned the monthly schedule
+  VISIT_ASSIGNED // a new branch visit was added to the schedule
+  VISIT_STATUS_CHANGED // a branch visit status changed (status carried in `data`)
+  MONTHLY_REPORT_AVAILABLE // the monthly report is ready to view
+  ADDITIONAL_TASK_ASSIGNED // manager assigned a new additional task to a supervisor
+  VISIT_MISSED // a scheduled visit passed its date with no action (Not Visited alert)
+  CONTACT_REPLIED // admin replied to a contact message
 }
 
 /// Lifecycle of a WithdrawalRequest (FRD §3.5.2).
@@ -226,6 +235,13 @@ enum BookingPaymentStatus {
 /// Every account in the platform — admins, managers, supervisors,
 /// and company users — lives in this single table. Role-specific
 /// behaviour is decided at the service layer based on `role`.
+/// UI language preference shown on the mobile profile (App Settings →
+/// Arabic / English) for every surface. Defaults to Arabic (Saudi-first).
+enum Language {
+  AR
+  EN
+}
+
 model User {
   id       String     @id @default(cuid())
   email    String     @unique
@@ -237,6 +253,11 @@ model User {
   // Bilingual display name
   nameAr String  @map("name_ar")
   nameEn String? @map("name_en")
+
+  /// Preferred UI language (App Settings → Arabic/English on the mobile
+  /// profile screens). Stored here so supervisor, company, and every other
+  /// surface read the same preference.
+  preferredLanguage Language @default(AR) @map("preferred_language")
 
   // Optional dynamic permission role (only meaningful for ADMIN / MANAGER).
   // Supervisors and company users have fixed capabilities and leave this NULL.
@@ -433,7 +454,8 @@ model NotImplementedReason {
   titleAr String  @map("title_ar")
   titleEn String? @map("title_en")
 
-  visitInstances VisitInstance[]
+  visitInstances  VisitInstance[]
+  additionalTasks AdditionalTask[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -631,11 +653,25 @@ model AdditionalTask {
   price     Decimal?
   notes     String?
 
-  // Visit state — set by the supervisor in Phase C.2. We default to
-  // REMAINING so a freshly-created task is immediately discoverable in
-  // the supervisor's pending list.
+  // Visit state — set by the supervisor. Defaults to REMAINING so a
+  // freshly-created task is immediately discoverable in the pending list.
   status              VisitStatus         @default(REMAINING)
   documentationStatus DocumentationStatus @default(UNDOCUMENTED)
+
+  // Visit-execution state — persisted when the supervisor acts on the task
+  // (Figma "Start visit" → GPS + timer; "Complete" → duration). Mirrors the
+  // VisitInstance execution columns so the mobile flow is identical.
+  startedAt       DateTime? @map("started_at")
+  endedAt         DateTime? @map("ended_at")
+  durationSeconds Int?      @map("duration_seconds")
+  startLatitude   Decimal?  @map("start_latitude")
+  startLongitude  Decimal?  @map("start_longitude")
+  lockedAt        DateTime? @map("locked_at")
+
+  notImplementedReasonId String?               @map("not_implemented_reason_id")
+  notImplementedReason   NotImplementedReason? @relation(fields: [notImplementedReasonId], references: [id])
+  notImplementedNote     String?               @map("not_implemented_note")
+  visitNote              String?               @map("visit_note")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -1049,6 +1085,14 @@ model VisitInstance {
 
   notImplementedReasonId String?               @map("not_implemented_reason_id")
   notImplementedReason   NotImplementedReason? @relation(fields: [notImplementedReasonId], references: [id])
+
+  /// Free-text note the supervisor adds alongside a Not-Implemented reason,
+  /// shown when the chosen reason is "Other" (Figma: Additional Notes).
+  notImplementedNote String? @map("not_implemented_note")
+
+  /// Optional free-text note the supervisor adds when completing a visit
+  /// (Figma: Visit Details → "Notes (optional)").
+  visitNote String? @map("visit_note")
 
   /// Recorded automatically when the supervisor starts/finishes the visit.
   startedAt       DateTime? @map("started_at")

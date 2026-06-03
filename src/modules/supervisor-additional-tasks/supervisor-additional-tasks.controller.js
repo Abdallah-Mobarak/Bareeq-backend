@@ -59,7 +59,7 @@ const startTask = asyncHandler(async (req, res) => {
 
 /** POST /supervisor/additional-tasks/:id/complete — FRD §1.4.4.1 §2.4 */
 const completeTask = asyncHandler(async (req, res) => {
-  const data = await service.completeTask(req.user.id, req.params.id);
+  const data = await service.completeTask(req.user.id, req.params.id, req.body);
   res.json({ success: true, data });
 });
 

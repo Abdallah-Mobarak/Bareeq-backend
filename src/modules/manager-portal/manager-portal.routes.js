@@ -19,6 +19,7 @@ const {
   createAdditionalTaskSchema,
   updateAdditionalTaskSchema,
   listAdditionalTasksQuerySchema,
+  overviewExportQuerySchema,
 } = require('./manager-portal.validation');
 
 const router = Router();
@@ -215,6 +216,25 @@ router.get(
   requirePermission('VIEW_MONTHLY_REPORTS'),
   validate(analysisQuerySchema, 'query'),
   controller.monthlyAnalysis,
+);
+
+/**
+ * Dashboard Export button — one file containing the §3.12.1 summary
+ * KPIs on top and the §3.12.2 regional breakdown as a table below.
+ * Reuses EXPORT_MONTHLY_REPORTS (the same key gates by-company exports);
+ * the FRD §4.2.1.2 catalog treats "monthly reports" as a single feature.
+ */
+router.get(
+  '/reports/overview/export.xlsx',
+  requirePermission('EXPORT_MONTHLY_REPORTS'),
+  validate(overviewExportQuerySchema, 'query'),
+  controller.exportOverviewXlsx,
+);
+router.get(
+  '/reports/overview/export.pdf',
+  requirePermission('EXPORT_MONTHLY_REPORTS'),
+  validate(overviewExportQuerySchema, 'query'),
+  controller.exportOverviewPdf,
 );
 
 /**

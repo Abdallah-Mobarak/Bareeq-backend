@@ -8,6 +8,7 @@ const {
   idParamSchema,
   listMyTasksQuerySchema,
   startBodySchema,
+  completeBodySchema,
   notImplementedBodySchema,
 } = require('./supervisor-additional-tasks.validation');
 
@@ -56,6 +57,7 @@ router.post(
 router.post(
   '/:id/complete',
   validate(idParamSchema, 'params'),
+  validate(completeBodySchema),
   controller.completeTask,
 );
 router.post(

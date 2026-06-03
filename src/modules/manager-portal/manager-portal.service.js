@@ -5,6 +5,7 @@ const { ZipArchive } = require('archiver');
 const { prisma } = require('../../infrastructure/database/prisma');
 const { ApiError } = require('../../utils/ApiError');
 const { logger } = require('../../utils/logger');
+const { notify } = require('../notifications/notifications.service');
 
 /**
  * Manager-facing read API — FRD §3 (Web Application Functionality for
@@ -1553,6 +1554,23 @@ const getRegionalReport = async ({ year, month, region: regionFilter }) => {
 };
 
 /**
+ * Data fetch for /manager/reports/overview/export.{xlsx,pdf}.
+ *
+ * The Dashboard view in the UI sits on top of two endpoints (summary +
+ * regional). Its Export button needs both in one file, so we fan out
+ * here and let the controller worry about file shape. Running the two
+ * fetches in parallel — they hit overlapping data but neither depends
+ * on the other, so Promise.all is the cheaper round-trip.
+ */
+const getOverviewExport = async ({ year, month, region } = {}) => {
+  const [summary, regional] = await Promise.all([
+    getOverallSummary({ year, month }),
+    getRegionalReport({ year, month, region }),
+  ]);
+  return { summary, regional };
+};
+
+/**
  * GET /manager/reports/analysis — FRD §3.12.3
  * Month-by-month series for the requested year, optionally narrowed
  * to one region. Returns a flat `data` array keyed by (month, region)
@@ -1729,6 +1747,28 @@ const createAdditionalTask = async (managerId, body) => {
       supervisor: { select: { id: true, nameAr: true, nameEn: true } },
     },
   });
+
+  /**
+   * FRD §1.5 — notify the supervisor that the manager assigned them a new
+   * additional task. Best-effort; never blocks task creation.
+   */
+  try {
+    const brand = [task.branchName, task.categoryName].filter(Boolean).join(' — ');
+    await notify({
+      userId: task.supervisorId,
+      type: 'ADDITIONAL_TASK_ASSIGNED',
+      titleAr: 'مهمة إضافية جديدة',
+      titleEn: 'New additional task assigned',
+      bodyAr: `تم إسناد مهمة إضافية لك${brand ? ` — ${brand}` : ''} (${task.companyName}).`,
+      bodyEn: `A new additional task has been assigned to you${brand ? ` — ${brand}` : ''} (${task.companyName}).`,
+      data: { additionalTaskId: task.id },
+    });
+  } catch (err) {
+    logger.error(
+      { err: err.message, additionalTaskId: task.id },
+      'Additional-task notification failed — task still created',
+    );
+  }
 
   return serializeAdditionalTask(task);
 };
@@ -1924,6 +1964,7 @@ module.exports = {
   listDailyVisits,
   getOverallSummary,
   getRegionalReport,
+  getOverviewExport,
   getMonthlyAnalysis,
   // Additional tasks
   createAdditionalTask,

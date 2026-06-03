@@ -321,6 +321,8 @@ const getMyBranchDetail = async (supervisorId, scheduledVisitId) => {
       startLongitude: i.startLongitude,
       lockedAt: i.lockedAt,
       notImplementedReason: i.notImplementedReason,
+      notImplementedNote: i.notImplementedNote,
+      visitNote: i.visitNote,
       branchManagerPhone: i.branchManagerPhone,
       jobNumber: i.jobNumber,
       rating: i.rating,
@@ -344,9 +346,248 @@ const getMyBranchDetail = async (supervisorId, scheduledVisitId) => {
   };
 };
 
+/**
+ * GET /supervisor/performance — Monthly Time Distribution (FRD §1.3).
+ *
+ * The supervisor "Performance" tab. Aggregates the supervisor's own visit
+ * instances for one month into:
+ *   - `overview`  : the flat KPI cards (branches, total visits, implemented,
+ *                   not-visited, closed, not-implemented, documented,
+ *                   undocumented, days worked).
+ *   - `companies` : one entry per company with the same totals PLUS a
+ *                   per-visit-type (V1..Vn) breakdown and that visit type's
+ *                   start/end date (min/max scheduled date).
+ *
+ * Filters (FRD §1.3.2): companyName, city, visitType, date range. Defaults
+ * to the current UTC month. Everything is scoped to `supervisorId` so a
+ * supervisor only ever sees their own numbers.
+ *
+ * Status → KPI mapping:
+ *   IMPLEMENTED → implemented · REMAINING → notVisited · UNDERWAY → underway
+ *   FINAL_CLOSED → finalClosed · NOT_IMPLEMENTED → notImplemented
+ * "Days worked" = distinct calendar days (UTC) on which a visit was started.
+ */
+const STATUS_KEY = {
+  IMPLEMENTED: 'implemented',
+  REMAINING: 'notVisited',
+  UNDERWAY: 'underway',
+  FINAL_CLOSED: 'finalClosed',
+  NOT_IMPLEMENTED: 'notImplemented',
+};
+
+const newCounters = () => ({
+  totalVisits: 0,
+  implemented: 0,
+  notVisited: 0,
+  underway: 0,
+  finalClosed: 0,
+  notImplemented: 0,
+  documented: 0,
+  undocumented: 0,
+});
+
+const tallyInstance = (counters, inst) => {
+  counters.totalVisits += 1;
+  const key = STATUS_KEY[inst.status];
+  if (key) {
+    counters[key] += 1;
+  }
+  if (inst.documentationStatus === 'DOCUMENTED') {
+    counters.documented += 1;
+  } else {
+    counters.undocumented += 1;
+  }
+};
+
+const dayStamp = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
+
+const getMyPerformance = async (supervisorId, rawQuery = {}) => {
+  const now = new Date();
+  const year = rawQuery.year ?? now.getUTCFullYear();
+  const month = rawQuery.month ?? now.getUTCMonth() + 1;
+  const { companyName, city, visitType, dateFrom, dateTo } = rawQuery;
+
+  const where = {
+    deletedAt: null,
+    ...(visitType && { visitOrder: visitType }),
+    ...((dateFrom || dateTo) && {
+      scheduledDate: {
+        ...(dateFrom && { gte: new Date(dateFrom) }),
+        ...(dateTo && { lte: new Date(dateTo) }),
+      },
+    }),
+    scheduledVisit: {
+      deletedAt: null,
+      monthlySchedule: { supervisorId, year, month, deletedAt: null },
+      regionScheduling: {
+        deletedAt: null,
+        ...(companyName && { companyName: { contains: companyName, mode: 'insensitive' } }),
+        ...(city && { city: { contains: city, mode: 'insensitive' } }),
+      },
+    },
+  };
+
+  const instances = await prisma.visitInstance.findMany({
+    where,
+    select: {
+      visitOrder: true,
+      status: true,
+      documentationStatus: true,
+      scheduledDate: true,
+      startedAt: true,
+      scheduledVisitId: true,
+      scheduledVisit: {
+        select: { regionScheduling: { select: { companyName: true } } },
+      },
+    },
+  });
+
+  const overview = newCounters();
+  const overviewBranches = new Set();
+  const overviewDays = new Set();
+  const companyMap = new Map();
+
+  for (const inst of instances) {
+    const company = inst.scheduledVisit?.regionScheduling?.companyName || '—';
+    const day = inst.startedAt ? dayStamp(inst.startedAt) : null;
+
+    tallyInstance(overview, inst);
+    overviewBranches.add(inst.scheduledVisitId);
+    if (day) overviewDays.add(day);
+
+    if (!companyMap.has(company)) {
+      companyMap.set(company, {
+        companyName: company,
+        totals: newCounters(),
+        perVisitType: {},
+        branchSet: new Set(),
+        daySet: new Set(),
+      });
+    }
+    const bucket = companyMap.get(company);
+    tallyInstance(bucket.totals, inst);
+    bucket.branchSet.add(inst.scheduledVisitId);
+    if (day) bucket.daySet.add(day);
+
+    const vt = `V${inst.visitOrder}`;
+    if (!bucket.perVisitType[vt]) {
+      bucket.perVisitType[vt] = { ...newCounters(), startDate: null, endDate: null };
+    }
+    const vtCounters = bucket.perVisitType[vt];
+    tallyInstance(vtCounters, inst);
+    if (inst.scheduledDate) {
+      if (!vtCounters.startDate || inst.scheduledDate < vtCounters.startDate) {
+        vtCounters.startDate = inst.scheduledDate;
+      }
+      if (!vtCounters.endDate || inst.scheduledDate > vtCounters.endDate) {
+        vtCounters.endDate = inst.scheduledDate;
+      }
+    }
+  }
+
+  const companies = [...companyMap.values()]
+    .map((b) => ({
+      companyName: b.companyName,
+      branches: b.branchSet.size,
+      daysWorked: b.daySet.size,
+      totals: b.totals,
+      perVisitType: b.perVisitType,
+    }))
+    .sort((a, b) => a.companyName.localeCompare(b.companyName));
+
+  return {
+    year,
+    month,
+    overview: {
+      branches: overviewBranches.size,
+      daysWorked: overviewDays.size,
+      ...overview,
+    },
+    companies,
+  };
+};
+
+/**
+ * GET /supervisor/stats — the same Monthly Time Distribution data, flattened
+ * into the shape the mobile "Performance" screen consumes directly:
+ *   { branchesCount, visitsTotal, implemented, notVisited, closed,
+ *     notImplemented, documented, undocumented, daysWorked,
+ *     byCompany: [ { companyName, v1, v2, v3, v4, total } ] }
+ *
+ * Metric definitions (all scoped to THIS supervisor, for the given month):
+ *   branchesCount  — distinct branches (ScheduledVisit rows) in the schedule
+ *   visitsTotal    — total VisitInstance rows (sum of all V1..Vn)
+ *   implemented    — status = IMPLEMENTED
+ *   notVisited     — status = REMAINING (no action taken yet)
+ *   closed         — status = FINAL_CLOSED
+ *   notImplemented — status = NOT_IMPLEMENTED
+ *   documented     — documentationStatus = DOCUMENTED
+ *   undocumented   — documentationStatus = UNDOCUMENTED
+ *   daysWorked     — distinct UTC calendar days a visit was STARTED
+ *   byCompany[].vN — count of that company's visit instances of order N
+ *   byCompany[].total — that company's total visit instances
+ */
+const getMyStats = async (supervisorId, rawQuery = {}) => {
+  const data = await getMyPerformance(supervisorId, rawQuery);
+  const o = data.overview;
+  return {
+    year: data.year,
+    month: data.month,
+    branchesCount: o.branches,
+    visitsTotal: o.totalVisits,
+    implemented: o.implemented,
+    notVisited: o.notVisited,
+    closed: o.finalClosed,
+    notImplemented: o.notImplemented,
+    documented: o.documented,
+    undocumented: o.undocumented,
+    daysWorked: o.daysWorked,
+    byCompany: data.companies.map((c) => ({
+      companyName: c.companyName,
+      v1: c.perVisitType.V1?.totalVisits || 0,
+      v2: c.perVisitType.V2?.totalVisits || 0,
+      v3: c.perVisitType.V3?.totalVisits || 0,
+      v4: c.perVisitType.V4?.totalVisits || 0,
+      total: c.totals.totalVisits,
+    })),
+  };
+};
+
+/**
+ * Flatten the performance breakdown into one row per (company × visit type)
+ * for the Excel/PDF export (FRD §1.3.3). Returns the full performance object
+ * plus a `flatRows` array shaped for the export columns.
+ */
+const buildPerformanceFlatRows = async (supervisorId, rawQuery = {}) => {
+  const data = await getMyPerformance(supervisorId, rawQuery);
+  const flatRows = [];
+  for (const company of data.companies) {
+    for (const vt of Object.keys(company.perVisitType).sort()) {
+      const m = company.perVisitType[vt];
+      flatRows.push({
+        companyName: company.companyName,
+        visitType: vt,
+        totalVisits: m.totalVisits,
+        implemented: m.implemented,
+        notVisited: m.notVisited,
+        finalClosed: m.finalClosed,
+        notImplemented: m.notImplemented,
+        documented: m.documented,
+        undocumented: m.undocumented,
+        startDate: dayStamp(m.startDate) || '',
+        endDate: dayStamp(m.endDate) || '',
+      });
+    }
+  }
+  return { ...data, flatRows };
+};
+
 module.exports = {
   myScheduleSummary,
   listMyBranches,
   getMyBranchDetail,
+  getMyPerformance,
+  getMyStats,
+  buildPerformanceFlatRows,
   monthBoundsUTC,
 };

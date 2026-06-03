@@ -38,4 +38,13 @@ const setMineStatus = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { task } });
 });
 
-module.exports = { create, list, getOne, update, remove, listMine, setMineStatus };
+/**
+ * PATCH /manager-tasks/:id/status — actors with MANAGE_TASKS can flip
+ * any task's done flag, not just their own.
+ */
+const setStatus = asyncHandler(async (req, res) => {
+  const task = await service.setTaskStatus(req.params.id, req.body.done);
+  res.json({ success: true, data: { task } });
+});
+
+module.exports = { create, list, getOne, update, remove, listMine, setMineStatus, setStatus };

@@ -24,9 +24,14 @@ const finalClosedSchema = Joi.object({}).default({});
 
 const notImplementedSchema = Joi.object({
   notImplementedReasonId: Joi.string().required(),
+  // Free-text "Additional Notes" (shown when the reason is "Other").
+  note: Joi.string().trim().max(1000).optional().allow(null, ''),
 });
 
-const completeSchema = Joi.object({}).default({});
+const completeSchema = Joi.object({
+  // Optional "Notes (optional)" the supervisor adds when completing the visit.
+  note: Joi.string().trim().max(1000).optional().allow(null, ''),
+}).default({});
 
 const toggleTaskSchema = Joi.object({
   done: Joi.boolean().required(),

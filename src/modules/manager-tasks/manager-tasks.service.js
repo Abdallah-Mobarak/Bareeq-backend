@@ -224,6 +224,34 @@ const setMyTaskStatus = async (managerId, taskId, done) => {
   return serializeTask(updated);
 };
 
+/**
+ * Generic status setter — for actors with MANAGE_TASKS who can flip the
+ * `done` flag on ANY manager task, not just their own. Mirrors
+ * setMyTaskStatus without the managerId scope.
+ */
+const setTaskStatus = async (taskId, done) => {
+  const task = await prisma.managerTask.findFirst({
+    where: { id: taskId, deletedAt: null },
+    include: { manager: true },
+  });
+  if (!task) {
+    throw ApiError.notFound('Task not found');
+  }
+
+  if (task.done === done) {
+    return serializeTask(task);
+  }
+
+  const updated = await prisma.managerTask.update({
+    where: { id: taskId },
+    data: { done },
+    include: { manager: true },
+  });
+
+  logger.info({ taskId, done }, 'Manager task status updated');
+  return serializeTask(updated);
+};
+
 module.exports = {
   createTask,
   listTasks,
@@ -232,4 +260,5 @@ module.exports = {
   deleteTask,
   listMyTasks,
   setMyTaskStatus,
+  setTaskStatus,
 };

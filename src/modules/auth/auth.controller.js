@@ -76,4 +76,43 @@ const me = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports = { webLogin, mobileLogin, refresh, logout, me };
+/** PATCH /auth/me — self-service profile edit (name/phone/email/language). */
+const updateMe = asyncHandler(async (req, res) => {
+  const user = await authService.updateMe(req.user.id, req.body);
+
+  res.json({
+    success: true,
+    data: { user },
+  });
+});
+
+/** POST /auth/me/change-password — change own password (revokes sessions). */
+const changePassword = asyncHandler(async (req, res) => {
+  await authService.changePassword(req.user.id, req.body);
+
+  res.json({
+    success: true,
+    data: { message: 'Password changed. Please log in again.' },
+  });
+});
+
+/** DELETE /auth/me — soft-delete own account (requires password confirm). */
+const deleteAccount = asyncHandler(async (req, res) => {
+  await authService.deleteAccount(req.user.id, req.body);
+
+  res.json({
+    success: true,
+    data: { message: 'Account deleted' },
+  });
+});
+
+module.exports = {
+  webLogin,
+  mobileLogin,
+  refresh,
+  logout,
+  me,
+  updateMe,
+  changePassword,
+  deleteAccount,
+};

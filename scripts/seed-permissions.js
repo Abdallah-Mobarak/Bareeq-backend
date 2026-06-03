@@ -211,7 +211,13 @@ const PERMISSION_CATALOG = [
     descriptionEn: 'Export representative reports',
   },
 
-  // 10. Admin-only: Managers Management [A]
+  // 10. Managers Management [M/A]
+  {
+    module: 'managers_admin',
+    key: 'VIEW_MANAGERS',
+    descriptionAr: 'عرض قائمة المديرين',
+    descriptionEn: 'View managers listing',
+  },
   {
     module: 'managers_admin',
     key: 'MANAGE_MANAGERS',
@@ -224,6 +230,12 @@ const PERMISSION_CATALOG = [
     descriptionAr: 'عرض تفاصيل المدير',
     descriptionEn: 'View manager details',
   },
+  {
+    module: 'managers_admin',
+    key: 'EXPORT_MANAGERS',
+    descriptionAr: 'تصدير قائمة المديرين (Excel)',
+    descriptionEn: 'Export managers list (Excel)',
+  },
 
   // 11. Admin-only: Tasks Management [A]
   {
@@ -233,7 +245,13 @@ const PERMISSION_CATALOG = [
     descriptionEn: 'Add, update, or delete manager tasks',
   },
 
-  // 12. Admin-only: Supervisors Management [A]
+  // 12. Supervisors Management [M/A]
+  {
+    module: 'supervisors_admin',
+    key: 'VIEW_SUPERVISORS',
+    descriptionAr: 'عرض قائمة المشرفين',
+    descriptionEn: 'View supervisors listing',
+  },
   {
     module: 'supervisors_admin',
     key: 'MANAGE_SUPERVISORS',
@@ -245,6 +263,12 @@ const PERMISSION_CATALOG = [
     key: 'VIEW_SUPERVISOR_DETAILS',
     descriptionAr: 'عرض تفاصيل المشرف',
     descriptionEn: 'View supervisor details',
+  },
+  {
+    module: 'supervisors_admin',
+    key: 'EXPORT_SUPERVISORS',
+    descriptionAr: 'تصدير قائمة المشرفين (Excel)',
+    descriptionEn: 'Export supervisors list (Excel)',
   },
   {
     module: 'supervisors_admin',
@@ -261,7 +285,16 @@ const PERMISSION_CATALOG = [
     descriptionEn: 'Add, update, or delete not-implemented reasons',
   },
 
-  // 14. Admin-only: Admins Management [A]
+  // 14. Admins Management [M/A]
+  // NOTE: granting MANAGE_ADMINS to a Manager effectively makes them
+  // capable of escalating any other admin — handle with care in the
+  // role-builder UI. The /me sub-routes stay ADMIN-only regardless.
+  {
+    module: 'admins_admin',
+    key: 'VIEW_ADMINS',
+    descriptionAr: 'عرض قائمة المسؤولين',
+    descriptionEn: 'View admins listing',
+  },
   {
     module: 'admins_admin',
     key: 'MANAGE_ADMINS',
@@ -273,6 +306,12 @@ const PERMISSION_CATALOG = [
     key: 'VIEW_ADMIN_DETAILS',
     descriptionAr: 'عرض تفاصيل المسؤول',
     descriptionEn: 'View admin details',
+  },
+  {
+    module: 'admins_admin',
+    key: 'EXPORT_ADMINS',
+    descriptionAr: 'تصدير قائمة المسؤولين (Excel)',
+    descriptionEn: 'Export admins list (Excel)',
   },
 
   // 15. Admin-only: User Contact Management [A]

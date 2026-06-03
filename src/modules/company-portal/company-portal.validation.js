@@ -68,6 +68,22 @@ const listBranchesQuerySchema = Joi.object({
 });
 
 /**
+ * GET /company/dashboard query schema.
+ *
+ * Both bounds are optional and inclusive; they filter on the visit's
+ * scheduledDate (same field as the branches list). Omitting both gives the
+ * all-time snapshot. `dateTo` is constrained to be >= `dateFrom` only when
+ * `dateFrom` is present, so passing just one bound still validates.
+ */
+const dashboardQuerySchema = Joi.object({
+  dateFrom: Joi.date().iso().optional(),
+  dateTo: Joi.date()
+    .iso()
+    .when('dateFrom', { is: Joi.exist(), then: Joi.date().min(Joi.ref('dateFrom')) })
+    .optional(),
+});
+
+/**
  * GET /company/monthly-report query schema — FRD §2.3.2.
  *
  * Both fields are optional; the service falls back to the current UTC
@@ -108,6 +124,7 @@ const listContactMessagesQuerySchema = Joi.object({
 
 module.exports = {
   idParamSchema,
+  dashboardQuerySchema,
   listBranchesQuerySchema,
   monthlyReportQuerySchema,
   submitContactSchema,

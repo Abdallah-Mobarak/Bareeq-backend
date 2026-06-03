@@ -3,6 +3,7 @@ const { ApiError } = require('../../utils/ApiError');
 const password = require('../../utils/password');
 const otp = require('../../utils/otp');
 const { sendEmail } = require('../../utils/mailer');
+const { signupOtpEmail, passwordResetOtpEmail } = require('../../utils/email-templates');
 const { logger } = require('../../utils/logger');
 const { config } = require('../../config/env');
 const authService = require('../auth/auth.service');
@@ -54,12 +55,13 @@ const requestSignup = async ({ email, password: plainPassword, nameAr, nameEn, p
 
   await sendEmail({
     to: email,
-    subject: 'Bareeq — verify your service provider account',
-    body:
-      `Hello ${nameEn || nameAr},\n\n` +
-      `Your Bareeq verification code is: ${code}\n` +
-      `It expires in ${otp.TTL_MINUTES} minutes.\n\n` +
-      `If you didn't try to sign up, ignore this email.`,
+    ...signupOtpEmail({
+      nameAr,
+      nameEn,
+      code,
+      ttlMinutes: otp.TTL_MINUTES,
+      isServiceProvider: true,
+    }),
   });
 
   void plainPassword;
@@ -152,12 +154,12 @@ const requestPasswordReset = async ({ email }) => {
     issuedCode = code;
     await sendEmail({
       to: email,
-      subject: 'Bareeq — password reset code',
-      body:
-        `Hello ${user.nameEn || user.nameAr},\n\n` +
-        `Your password reset code is: ${code}\n` +
-        `It expires in ${otp.TTL_MINUTES} minutes.\n\n` +
-        `If you didn't request a reset, ignore this email.`,
+      ...passwordResetOtpEmail({
+        nameAr: user.nameAr,
+        nameEn: user.nameEn,
+        code,
+        ttlMinutes: otp.TTL_MINUTES,
+      }),
     });
     logger.info({ email }, 'Service provider password-reset OTP issued');
   } else {

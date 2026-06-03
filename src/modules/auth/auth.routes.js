@@ -2,7 +2,13 @@ const { Router } = require('express');
 
 const validate = require('../../middlewares/validate');
 const requireAuth = require('../../middlewares/requireAuth');
-const { loginSchema, refreshTokenSchema } = require('./auth.validation');
+const {
+  loginSchema,
+  refreshTokenSchema,
+  updateMeSchema,
+  changePasswordSchema,
+  deleteAccountSchema,
+} = require('./auth.validation');
 const controller = require('./auth.controller');
 
 const router = Router();
@@ -29,5 +35,13 @@ router.post('/logout', validate(refreshTokenSchema), controller.logout);
  * Protected endpoints — require a valid access token.
  */
 router.get('/me', requireAuth, controller.me);
+router.patch('/me', requireAuth, validate(updateMeSchema), controller.updateMe);
+router.post(
+  '/me/change-password',
+  requireAuth,
+  validate(changePasswordSchema),
+  controller.changePassword,
+);
+router.delete('/me', requireAuth, validate(deleteAccountSchema), controller.deleteAccount);
 
 module.exports = router;

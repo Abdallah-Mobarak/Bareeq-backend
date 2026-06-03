@@ -65,6 +65,7 @@ const serializeUser = (user, permissionRole = null) => ({
   status: user.status,
   nameAr: user.nameAr,
   nameEn: user.nameEn,
+  preferredLanguage: user.preferredLanguage,
   permissionRoleId: user.permissionRoleId,
   permissionRole,
 });
@@ -181,7 +182,6 @@ const login = async ({ identifier, password: plainPassword, deviceInfo, clientTy
   const accessToken = signAccessToken({
     sub: user.id,
     role: user.role,
-    permissionRoleId: user.permissionRoleId,
   });
 
   const refreshToken = await issueRefreshToken(user.id, deviceInfo);
@@ -254,7 +254,6 @@ const refresh = async ({ refreshToken: oldToken, deviceInfo }) => {
   const accessToken = signAccessToken({
     sub: stored.user.id,
     role: stored.user.role,
-    permissionRoleId: stored.user.permissionRoleId,
   });
 
   const permissionRole = await loadPermissionRoleForResponse(
@@ -311,4 +310,115 @@ const getMe = async (userId) => {
   return serializeUser(user, permissionRole);
 };
 
-module.exports = { login, refresh, logout, getMe };
+/**
+ * Self-service profile edit (mobile "Account info" ✏️ — supervisor + company).
+ * Works for any authenticated role. Only the fields actually present in the
+ * body are touched; email/phone uniqueness is re-checked so we never collide
+ * with another live account.
+ */
+const updateMe = async (userId, { nameAr, nameEn, email, phone, preferredLanguage }) => {
+  const me = await prisma.user.findFirst({ where: { id: userId, deletedAt: null } });
+  if (!me) {
+    throw ApiError.unauthorized('User not found');
+  }
+
+  if (email && email !== me.email) {
+    const clash = await prisma.user.findFirst({
+      where: { email, id: { not: userId }, deletedAt: null },
+    });
+    if (clash) {
+      throw ApiError.conflict('Email already in use');
+    }
+  }
+
+  if (phone && phone !== me.phone) {
+    const clash = await prisma.user.findFirst({
+      where: { phone, id: { not: userId }, deletedAt: null },
+    });
+    if (clash) {
+      throw ApiError.conflict('Phone number already in use');
+    }
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      ...(nameAr !== undefined && { nameAr }),
+      ...(nameEn !== undefined && { nameEn: nameEn || null }),
+      ...(email !== undefined && { email }),
+      ...(phone !== undefined && { phone: phone || null }),
+      ...(preferredLanguage !== undefined && { preferredLanguage }),
+    },
+  });
+
+  logger.info({ userId }, 'User updated own profile');
+  const permissionRole = await loadPermissionRoleForResponse(updated.permissionRoleId);
+  return serializeUser(updated, permissionRole);
+};
+
+/**
+ * Change own password (mobile "Reset Password" / dashboard). Requires the
+ * current password and revokes every refresh token so other devices are
+ * logged out — same policy as the admin self-service flow.
+ */
+const changePassword = async (userId, { currentPassword, newPassword }) => {
+  const me = await prisma.user.findFirst({ where: { id: userId, deletedAt: null } });
+  if (!me) {
+    throw ApiError.unauthorized('User not found');
+  }
+
+  const ok = await password.compare(currentPassword, me.password);
+  if (!ok) {
+    throw ApiError.unauthorized('Current password is incorrect');
+  }
+
+  const passwordHash = await password.hash(newPassword);
+
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: userId }, data: { password: passwordHash } }),
+    prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    }),
+  ]);
+
+  logger.info({ userId }, 'User changed own password');
+};
+
+/**
+ * Delete own account (mobile "Delete account"). Soft-delete (sets deletedAt)
+ * so historical visit/booking records keep their FK integrity, and revokes
+ * all refresh tokens. We require the password as a confirmation guard because
+ * the action is destructive and a left-open access token shouldn't be enough.
+ */
+const deleteAccount = async (userId, { password: plainPassword }) => {
+  const me = await prisma.user.findFirst({ where: { id: userId, deletedAt: null } });
+  if (!me) {
+    throw ApiError.unauthorized('User not found');
+  }
+
+  const ok = await password.compare(plainPassword, me.password);
+  if (!ok) {
+    throw ApiError.unauthorized('Password is incorrect');
+  }
+
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: userId }, data: { deletedAt: new Date() } }),
+    prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    }),
+  ]);
+
+  logger.info({ userId, role: me.role }, 'User soft-deleted own account');
+};
+
+module.exports = {
+  login,
+  refresh,
+  logout,
+  getMe,
+  updateMe,
+  changePassword,
+  deleteAccount,
+};

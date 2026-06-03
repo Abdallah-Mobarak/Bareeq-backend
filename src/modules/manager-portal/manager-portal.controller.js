@@ -1,3 +1,5 @@
+const ExcelJS = require('exceljs');
+
 const { asyncHandler } = require('../../utils/asyncHandler');
 const { buildExcel, xlsxResponse, todayStamp } = require('../../utils/excelExport');
 const { buildPdf, pdfResponse } = require('../../utils/pdfExport');
@@ -75,6 +77,74 @@ const TEAMS_EXPORT_COLUMNS = [
   { header: 'Documented', key: 'documented', width: 12 },
   { header: 'Undocumented', key: 'undocumented', width: 14 },
 ];
+
+/**
+ * Columns for the Regional Reports table inside the Overview export.
+ * Same shape for .xlsx and .pdf, with the completion rate rendered as
+ * "NN%" — the service returns it as an integer percent.
+ */
+const OVERVIEW_REGIONAL_COLUMNS = [
+  { header: 'Region', key: 'region', width: 22 },
+  { header: 'Branches', key: 'branchCount', width: 12 },
+  { header: 'Scheduled', key: 'scheduled', width: 12 },
+  { header: 'Implemented', key: 'implemented', width: 12 },
+  { header: 'Unimplemented', key: 'unimplemented', width: 14 },
+  { header: 'Completion', key: 'completionRate', width: 12, format: (v) => `${v}%` },
+];
+
+/**
+ * Build the .xlsx workbook for /reports/overview/export.xlsx.
+ *
+ * Goes around buildExcel because the file needs a KPI block above the
+ * regional table — the shared helper is designed for table-only exports
+ * and starts the header row at row 1. Kept in this module (not promoted
+ * to excelExport.js) because it's a single caller; extending the shared
+ * helper for one consumer would add the wrong kind of abstraction.
+ */
+const buildOverviewWorkbook = async ({ summary, regional }) => {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Bareeq';
+  workbook.created = new Date();
+
+  const period = `${summary.year}-${String(summary.month).padStart(2, '0')}`;
+  const sheet = workbook.addWorksheet(`Overview ${period}`);
+
+  // Section A — title + KPI block. Two columns: label | value.
+  sheet.columns = [{ width: 24 }, { width: 22 }];
+  sheet.addRow([`Overview — ${period}`]).font = { bold: true, size: 14 };
+  sheet.addRow([]);
+  const kpiHeader = sheet.addRow(['SUMMARY']);
+  kpiHeader.font = { bold: true };
+  sheet.addRow(['Region Filter', regional.filterRegion || 'All']);
+  sheet.addRow(['Total Branches', summary.branchCount]);
+  sheet.addRow(['Scheduled', summary.scheduled]);
+  sheet.addRow(['Implemented', summary.implemented]);
+  sheet.addRow(['Unimplemented', summary.unimplemented]);
+  sheet.addRow(['Completion Rate', `${summary.completionRate}%`]);
+  sheet.addRow([]);
+
+  // Section B — regional breakdown. Switching column widths mid-sheet
+  // (only the next header row honours new widths visually in ExcelJS;
+  // we set them on the cells directly via column iteration).
+  const tableHeaderRow = sheet.addRow(['REGIONAL BREAKDOWN']);
+  tableHeaderRow.font = { bold: true };
+  const headerRow = sheet.addRow(OVERVIEW_REGIONAL_COLUMNS.map((c) => c.header));
+  headerRow.font = { bold: true };
+  OVERVIEW_REGIONAL_COLUMNS.forEach((c, i) => {
+    sheet.getColumn(i + 1).width = Math.max(sheet.getColumn(i + 1).width || 0, c.width);
+  });
+
+  for (const r of regional.rows) {
+    sheet.addRow(
+      OVERVIEW_REGIONAL_COLUMNS.map((c) => {
+        const raw = typeof c.key === 'function' ? c.key(r) : r[c.key];
+        return c.format ? c.format(raw, r) : (raw ?? '—');
+      }),
+    );
+  }
+
+  return workbook.xlsx.writeBuffer();
+};
 
 const BRANCHES_EXPORT_COLUMNS = [
   { header: 'Company', key: 'companyName', width: 24 },
@@ -349,6 +419,42 @@ const monthlyAnalysis = asyncHandler(async (req, res) => {
   res.json({ success: true, data });
 });
 
+/**
+ * GET /manager/reports/overview/export.xlsx — Dashboard Export button.
+ * Not in the FRD §3.12 spec literally, but the Dashboard UI has an
+ * Export button that needs one file with the summary KPIs on top and
+ * the regional breakdown as a table below.
+ */
+const exportOverviewXlsx = asyncHandler(async (req, res) => {
+  const data = await service.getOverviewExport(req.validatedQuery || {});
+  const buffer = await buildOverviewWorkbook(data);
+  const period = `${data.summary.year}-${String(data.summary.month).padStart(2, '0')}`;
+  xlsxResponse(res, buffer, `manager-overview-${period}.xlsx`);
+});
+
+/**
+ * GET /manager/reports/overview/export.pdf — Dashboard Export button.
+ *
+ * KPIs go in the subtitle so we can reuse buildPdf as-is — pdfkit lays
+ * out a multi-line subtitle automatically. Same trick as the existing
+ * exportReportByCompanyPdf, which puts grand totals in the subtitle.
+ */
+const exportOverviewPdf = asyncHandler(async (req, res) => {
+  const { summary, regional } = await service.getOverviewExport(req.validatedQuery || {});
+  const period = `${summary.year}-${String(summary.month).padStart(2, '0')}`;
+  const subtitle = [
+    `Region: ${regional.filterRegion || 'All'}`,
+    `Branches: ${summary.branchCount} • Scheduled: ${summary.scheduled} • Implemented: ${summary.implemented} • Unimplemented: ${summary.unimplemented} • Completion: ${summary.completionRate}%`,
+  ].join('\n');
+  const buffer = await buildPdf({
+    title: `Overview — ${period}`,
+    subtitle,
+    columns: OVERVIEW_REGIONAL_COLUMNS,
+    rows: regional.rows,
+  });
+  pdfResponse(res, buffer, `manager-overview-${period}.pdf`);
+});
+
 /** POST /manager/additional-tasks — FRD §3.9.2 (create) */
 const createAdditionalTask = asyncHandler(async (req, res) => {
   const data = await service.createAdditionalTask(req.user.id, req.body);
@@ -424,6 +530,8 @@ module.exports = {
   overallSummary,
   regionalReport,
   monthlyAnalysis,
+  exportOverviewXlsx,
+  exportOverviewPdf,
   createAdditionalTask,
   listAdditionalTasks,
   getAdditionalTask,

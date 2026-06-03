@@ -5,9 +5,12 @@ const { config } = require('../config/env');
  * Sign an access token. Used at login and at refresh-token rotation.
  *
  * Payload conventions:
- *   sub              user id (subject)
- *   role             SystemRole enum value
- *   permissionRoleId optional dynamic permission role id
+ *   sub   user id (subject)
+ *   role  SystemRole enum value
+ *
+ * `permissionRoleId` is intentionally NOT in the payload — it's mutable
+ * (admins can reassign roles mid-session), so requireAuth fetches it
+ * fresh from the DB every request instead of trusting a stale token.
  *
  * The library adds `iat` and `exp` automatically.
  */

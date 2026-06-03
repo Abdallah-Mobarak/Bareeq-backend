@@ -31,30 +31,33 @@ const listMyTasksQuerySchema = Joi.object({
 });
 
 /**
- * POST /supervisor/additional-tasks/:id/start body schema — GPS pair.
- * Latitude/longitude are required per FRD §1.4.4.1 ("Location via GPS")
- * even though we don't persist them until Phase C.3. We still validate
- * them so the supervisor app sends consistent data from day one and
- * the column rollout in C.3 doesn't break existing clients.
+ * POST /supervisor/additional-tasks/:id/start body schema — GPS pair
+ * (FRD §1.4.4.1 "Location via GPS"). Persisted as startLatitude/Longitude.
  */
 const startBodySchema = Joi.object({
   latitude: Joi.number().min(-90).max(90).required(),
   longitude: Joi.number().min(-180).max(180).required(),
 });
 
+/** POST /supervisor/additional-tasks/:id/complete — optional "Notes". */
+const completeBodySchema = Joi.object({
+  note: Joi.string().trim().max(1000).optional().allow(null, ''),
+}).default({});
+
 /**
  * POST /supervisor/additional-tasks/:id/not-implemented body schema —
- * a free-text reason for now. Phase C.3 will switch to
- * `notImplementedReasonId` (a FK to the admin-managed Reasons table)
- * once the migration ships.
+ * `notImplementedReasonId` FKs the admin-managed Reasons table (same as the
+ * branch-visit flow). `note` carries the optional "Other → Additional Notes".
  */
 const notImplementedBodySchema = Joi.object({
-  reasonText: Joi.string().trim().min(2).max(500).required(),
+  notImplementedReasonId: Joi.string().trim().min(1).max(40).required(),
+  note: Joi.string().trim().max(1000).optional().allow(null, ''),
 });
 
 module.exports = {
   idParamSchema,
   listMyTasksQuerySchema,
   startBodySchema,
+  completeBodySchema,
   notImplementedBodySchema,
 };

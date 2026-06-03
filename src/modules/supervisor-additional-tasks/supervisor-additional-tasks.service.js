@@ -9,10 +9,10 @@ const { ApiError } = require('../../utils/ApiError');
  *               ├─► FINAL_CLOSED                (terminal, locked)
  *               └─► NOT_IMPLEMENTED             (terminal, locked, reason required)
  *
- * Photos / required-task checks / OTP documentation are deferred to a
- * later phase (C.3). Status transitions and read endpoints are enough
- * to demo an end-to-end "manager assigns → supervisor closes the loop"
- * flow today.
+ * Status transitions now PERSIST execution state (startedAt / endedAt /
+ * durationSeconds / GPS / lockedAt / notImplementedReasonId / notes) just
+ * like VisitInstance. Photos / required-task checks / OTP documentation for
+ * additional tasks are still deferred to a later phase.
  *
  * Scope: every query / mutation is scoped by `supervisorId = req.user.id`.
  * Returns 404 (NOT 403) for tasks the caller doesn't own — same
@@ -39,9 +39,7 @@ const serializeTask = (t) => ({
   notes: t.notes,
   status: t.status,
   documentationStatus: t.documentationStatus,
-  // Visit-execution state (populated once the supervisor acts on the task).
-  // NOTE: AdditionalTask doesn't yet have these columns — Phase C.3 will
-  // add them via migration. For now they read as null from the service.
+  // Visit-execution state, persisted when the supervisor acts on the task.
   startedAt: t.startedAt ?? null,
   endedAt: t.endedAt ?? null,
   durationSeconds: t.durationSeconds ?? null,
@@ -49,6 +47,8 @@ const serializeTask = (t) => ({
   startLongitude: t.startLongitude ?? null,
   lockedAt: t.lockedAt ?? null,
   notImplementedReason: t.notImplementedReason ?? null,
+  notImplementedNote: t.notImplementedNote ?? null,
+  visitNote: t.visitNote ?? null,
   createdAt: t.createdAt,
   updatedAt: t.updatedAt,
 });
@@ -186,18 +186,17 @@ const assertNotLocked = (task) => {
   }
 };
 
+const TASK_INCLUDE = {
+  manager: { select: { id: true, nameAr: true, nameEn: true } },
+  notImplementedReason: { select: { id: true, titleAr: true, titleEn: true } },
+};
+
 /**
  * POST /supervisor/additional-tasks/:id/start
- * REMAINING → UNDERWAY. Records GPS + startedAt timestamp.
- *
- * NOTE on visit-execution columns: AdditionalTask doesn't carry the
- * execution columns yet (startedAt, endedAt, durationSeconds,
- * startLatitude/Longitude, lockedAt, notImplementedReasonId) — they'll
- * be added by the Phase C.3 migration. Until then the START endpoint
- * only flips `status` to UNDERWAY so the flow is testable end-to-end.
- * Photos / OTP / required-tasks land in Phase C.3.
+ * REMAINING → UNDERWAY. Persists the start timestamp + GPS (Figma "Start
+ * visit" → timer starts, location captured).
  */
-const startTask = async (supervisorId, taskId, { latitude: _lat, longitude: _lng }) => {
+const startTask = async (supervisorId, taskId, { latitude, longitude }) => {
   return prisma.$transaction(async (tx) => {
     const task = await loadOwned(taskId, supervisorId, tx);
     assertNotLocked(task);
@@ -207,10 +206,13 @@ const startTask = async (supervisorId, taskId, { latitude: _lat, longitude: _lng
 
     const updated = await tx.additionalTask.update({
       where: { id: task.id },
-      data: { status: 'UNDERWAY' },
-      include: {
-        manager: { select: { id: true, nameAr: true, nameEn: true } },
+      data: {
+        status: 'UNDERWAY',
+        startedAt: new Date(),
+        startLatitude: latitude,
+        startLongitude: longitude,
       },
+      include: TASK_INCLUDE,
     });
     return serializeTask(updated);
   });
@@ -218,9 +220,10 @@ const startTask = async (supervisorId, taskId, { latitude: _lat, longitude: _lng
 
 /**
  * POST /supervisor/additional-tasks/:id/complete
- * UNDERWAY → IMPLEMENTED. Terminal.
+ * UNDERWAY → IMPLEMENTED. Stops the timer, computes duration, optionally
+ * stores the supervisor's "Notes". Terminal + locked.
  */
-const completeTask = async (supervisorId, taskId) => {
+const completeTask = async (supervisorId, taskId, { note } = {}) => {
   return prisma.$transaction(async (tx) => {
     const task = await loadOwned(taskId, supervisorId, tx);
     assertNotLocked(task);
@@ -228,12 +231,21 @@ const completeTask = async (supervisorId, taskId) => {
       throw ApiError.conflict(`Task is ${task.status}, only UNDERWAY tasks can be completed`);
     }
 
+    const now = new Date();
+    const durationSeconds = task.startedAt
+      ? Math.floor((now.getTime() - new Date(task.startedAt).getTime()) / 1000)
+      : null;
+
     const updated = await tx.additionalTask.update({
       where: { id: task.id },
-      data: { status: 'IMPLEMENTED' },
-      include: {
-        manager: { select: { id: true, nameAr: true, nameEn: true } },
+      data: {
+        status: 'IMPLEMENTED',
+        endedAt: now,
+        durationSeconds,
+        lockedAt: now,
+        ...(note !== undefined && { visitNote: note || null }),
       },
+      include: TASK_INCLUDE,
     });
     return serializeTask(updated);
   });
@@ -241,7 +253,7 @@ const completeTask = async (supervisorId, taskId) => {
 
 /**
  * POST /supervisor/additional-tasks/:id/final-closed
- * REMAINING → FINAL_CLOSED. Terminal — branch is permanently closed.
+ * REMAINING → FINAL_CLOSED. Terminal + locked — branch permanently closed.
  */
 const finalCloseTask = async (supervisorId, taskId) => {
   return prisma.$transaction(async (tx) => {
@@ -255,10 +267,8 @@ const finalCloseTask = async (supervisorId, taskId) => {
 
     const updated = await tx.additionalTask.update({
       where: { id: task.id },
-      data: { status: 'FINAL_CLOSED' },
-      include: {
-        manager: { select: { id: true, nameAr: true, nameEn: true } },
-      },
+      data: { status: 'FINAL_CLOSED', lockedAt: new Date() },
+      include: TASK_INCLUDE,
     });
     return serializeTask(updated);
   });
@@ -266,20 +276,29 @@ const finalCloseTask = async (supervisorId, taskId) => {
 
 /**
  * POST /supervisor/additional-tasks/:id/not-implemented
- * REMAINING → NOT_IMPLEMENTED. Reason required and stored as a free-text
- * `notes` append (since AdditionalTask doesn't have a FK to Reason yet —
- * Phase C.3 will add `notImplementedReasonId`).
+ * REMAINING → NOT_IMPLEMENTED. The reason is a FK into the admin-managed
+ * Reasons table (`notImplementedReasonId`), matching the branch-visit flow;
+ * an optional free-text `note` carries the "Other → Additional Notes" text.
  *
- * Calling this on a task that's already NOT_IMPLEMENTED is allowed and
- * updates the reason text — this matches the FRD §3.2 immutability
- * exception ("If Not Implemented was selected, the reason can be
- * updated").
+ * Calling this on an already-NOT_IMPLEMENTED task is allowed and updates the
+ * reason/note — FRD §3.2 immutability exception ("the reason can be updated").
  */
-const notImplementTask = async (supervisorId, taskId, { reasonText }) => {
+const notImplementTask = async (
+  supervisorId,
+  taskId,
+  { notImplementedReasonId, note },
+) => {
+  const reason = await prisma.notImplementedReason.findFirst({
+    where: { id: notImplementedReasonId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!reason) {
+    throw ApiError.badRequest('Reason not found');
+  }
+
   return prisma.$transaction(async (tx) => {
     const task = await loadOwned(taskId, supervisorId, tx);
 
-    // Allow updating the reason text on an already-NOT_IMPLEMENTED task.
     const updatableStatus =
       task.status === 'REMAINING' || task.status === 'NOT_IMPLEMENTED';
     if (!updatableStatus) {
@@ -288,27 +307,16 @@ const notImplementTask = async (supervisorId, taskId, { reasonText }) => {
       );
     }
 
-    /**
-     * Until the migration lands, we record the reason inline in `notes`
-     * with a stable prefix the UI can parse out. Phase C.3 will replace
-     * this with a FK to the Reasons table and drop the inline string.
-     */
-    const reasonPrefix = '[Not implemented reason] ';
-    const previousNotes = task.notes || '';
-    const cleaned = previousNotes
-      .split('\n')
-      .filter((line) => !line.startsWith(reasonPrefix))
-      .join('\n')
-      .trim();
-    const stamped = `${reasonPrefix}${reasonText}`;
-    const newNotes = cleaned ? `${cleaned}\n${stamped}` : stamped;
-
     const updated = await tx.additionalTask.update({
       where: { id: task.id },
-      data: { status: 'NOT_IMPLEMENTED', notes: newNotes },
-      include: {
-        manager: { select: { id: true, nameAr: true, nameEn: true } },
+      data: {
+        status: 'NOT_IMPLEMENTED',
+        documentationStatus: 'UNDOCUMENTED',
+        notImplementedReasonId,
+        ...(note !== undefined && { notImplementedNote: note || null }),
+        lockedAt: task.lockedAt ?? new Date(),
       },
+      include: TASK_INCLUDE,
     });
     return serializeTask(updated);
   });
