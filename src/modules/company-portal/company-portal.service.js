@@ -204,6 +204,340 @@ const serializeBranchRow = (sv) => ({
   })),
 });
 
+/**
+ * Build the ScheduledVisit `where` clause for an optional period filter.
+ * Returns null when neither year nor month is given (caller then uses the
+ * "any non-deleted visit" default). ADDITIONAL visits have no
+ * monthlySchedule, so a month/year filter naturally excludes them — that's
+ * intended: the period filter is about the monthly plan.
+ */
+const schedulePeriodClause = (year, month) => {
+  if (!year && !month) {
+    return null;
+  }
+  return {
+    deletedAt: null,
+    monthlySchedule: {
+      deletedAt: null,
+      ...(year && { year }),
+      ...(month && { month }),
+    },
+  };
+};
+
+/** Prisma select for a minimal person reference (supervisor / accountant manager). */
+const PERSON_SELECT = { id: true, nameAr: true, nameEn: true };
+
+/**
+ * The supervisor responsible for a scheduled visit:
+ *   • REGULAR    → the supervisor on the monthly schedule.
+ *   • ADDITIONAL → the explicitly assigned supervisor.
+ */
+const visitSupervisor = (sv) =>
+  (sv.type === 'REGULAR' ? sv.monthlySchedule?.supervisor : sv.assignedToSupervisor) || null;
+
+/** DISTINCT supervisors across a branch's scheduled visits. */
+const collectSupervisors = (scheduledVisits = []) => {
+  const map = new Map();
+  for (const sv of scheduledVisits) {
+    const sup = visitSupervisor(sv);
+    if (sup && !map.has(sup.id)) {
+      map.set(sup.id, sup);
+    }
+  }
+  return [...map.values()];
+};
+
+/**
+ * The DISTINCT accountant managers covering a branch:
+ *   • explicit assignments via the AccountantManagerRegionScheduling M:N
+ *     table (rs.accountantAssignments), PLUS
+ *   • the company's "all-branches" AMs (assignedToAllBranches=true), which
+ *     implicitly cover every branch — passed in once per request.
+ * Mirrors the coverage logic in assign-company.
+ */
+const collectAccountantManagers = (accountantAssignments = [], allBranchAms = []) => {
+  const map = new Map();
+  for (const am of allBranchAms) {
+    if (!map.has(am.id)) {
+      map.set(am.id, am);
+    }
+  }
+  for (const a of accountantAssignments) {
+    const u = a.user;
+    if (u && !map.has(u.id)) {
+      map.set(u.id, u);
+    }
+  }
+  return [...map.values()];
+};
+
+/**
+ * The company's "all-branches" accountant managers — AMs whose
+ * assignedToAllBranches flag implicitly covers EVERY branch of the company.
+ * Fetched once per request and applied to every branch row.
+ */
+const companyAllBranchAccountantManagers = (companyId) =>
+  prisma.user.findMany({
+    where: {
+      companyId,
+      role: 'ACCOUNTANT_MANAGER',
+      assignedToAllBranches: true,
+      deletedAt: null,
+    },
+    select: PERSON_SELECT,
+  });
+
+/**
+ * Serialize a RegionScheduling row for /company/all-branches.
+ *
+ * This is the WHOLE branch catalogue, so the row carries the branch's own
+ * attributes plus the DISTINCT supervisors and accountant managers assigned
+ * to it — but NO per-month visit status (a branch may not be scheduled at
+ * all). `id` here is the RegionScheduling id, NOT a ScheduledVisit id like
+ * /company/branches returns — different id spaces, so don't feed one into
+ * the other's :id route. `allBranchAms` is the company's all-branches AM
+ * list, shared across rows.
+ */
+const serializeAllBranchRow = (rs, allBranchAms = []) => ({
+  id: rs.id,
+  companyName: rs.companyName,
+  branchName: rs.branchName,
+  categoryName: rs.categoryName,
+  // FRD §2.2.1 — "Brand name (Branch name + Category name)".
+  brandName: [rs.branchName, rs.categoryName].filter(Boolean).join(' — '),
+  branchNumber: rs.branchNumber,
+  city: rs.city,
+  region: rs.region,
+  address: rs.address,
+  location: rs.location,
+  latitude: rs.latitude,
+  longitude: rs.longitude,
+  numberOfVisits: rs.numberOfVisits,
+  code: rs.code,
+  visitTypes: visitTypesFor(rs.numberOfVisits),
+  assignedSupervisors: collectSupervisors(rs.scheduledVisits),
+  assignedAccountantManagers: collectAccountantManagers(rs.accountantAssignments, allBranchAms),
+});
+
+/**
+ * GET /company/all-branches
+ *
+ * Lists EVERY branch that belongs to the caller's company, read straight
+ * from the RegionScheduling catalogue (what the admin imported from Excel).
+ * Unlike listMyBranches, it is NOT scoped to a month and does NOT require a
+ * ScheduledVisit to exist — so a freshly-imported branch with no visits yet
+ * still appears.
+ *
+ * Authorization reuses scopeForUser: COMPANY_USER / all-branches AM see the
+ * whole company; an AM with specific assignments sees only their branches.
+ * Because the base model here IS RegionScheduling, the scope fragment is
+ * applied at the top level (not nested under a `regionScheduling` relation).
+ */
+const listAllMyBranches = async (userId, rawQuery) => {
+  const user = await loadUserWithCompany(userId);
+  const scope = await scopeForUser(user);
+
+  const {
+    page,
+    limit,
+    sort,
+    q,
+    branchName,
+    categoryName,
+    branchNumber,
+    city,
+    region,
+    address,
+    code,
+    visitType,
+    year,
+    month,
+  } = rawQuery;
+
+  // When a period is given, only show branches scheduled in it, and only
+  // pull that period's visits when resolving the assigned supervisors.
+  const periodClause = schedulePeriodClause(year, month);
+
+  const where = {
+    deletedAt: null,
+    ...scope, // companyName (+ id IN for specific AMs) — outermost guarantee
+    ...(branchName && { branchName: { contains: branchName, mode: 'insensitive' } }),
+    ...(categoryName && { categoryName: { contains: categoryName, mode: 'insensitive' } }),
+    ...(branchNumber && { branchNumber: { contains: branchNumber } }),
+    ...(city && { city: { contains: city, mode: 'insensitive' } }),
+    ...(region && { region: { contains: region, mode: 'insensitive' } }),
+    ...(address && { address: { contains: address, mode: 'insensitive' } }),
+    ...(code && { code: { contains: code, mode: 'insensitive' } }),
+    ...(visitType && { numberOfVisits: { gte: visitType } }),
+    ...(periodClause && { scheduledVisits: { some: periodClause } }),
+  };
+
+  if (q) {
+    where.OR = [
+      { branchName: { contains: q, mode: 'insensitive' } },
+      { categoryName: { contains: q, mode: 'insensitive' } },
+      { branchNumber: { contains: q } },
+      { city: { contains: q, mode: 'insensitive' } },
+      { region: { contains: q, mode: 'insensitive' } },
+      { code: { contains: q, mode: 'insensitive' } },
+    ];
+  }
+
+  let orderBy;
+  if (sort === 'newest') {
+    orderBy = { createdAt: 'desc' };
+  } else if (sort === 'oldest') {
+    orderBy = { createdAt: 'asc' };
+  } else {
+    orderBy = [{ branchName: 'asc' }, { city: 'asc' }];
+  }
+
+  const [allBranchAms, [items, total]] = await Promise.all([
+    companyAllBranchAccountantManagers(user.company.id),
+    prisma.$transaction([
+      prisma.regionScheduling.findMany({
+        where,
+        orderBy,
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          // Pulled only to derive `assignedSupervisors`. Scoped to the period
+          // when one is given so the supervisor names match the filter.
+          scheduledVisits: {
+            where: periodClause || { deletedAt: null },
+            select: {
+              type: true,
+              monthlySchedule: { select: { supervisor: { select: PERSON_SELECT } } },
+              assignedToSupervisor: { select: PERSON_SELECT },
+            },
+          },
+          // Explicit accountant-manager assignments for this branch.
+          accountantAssignments: {
+            where: { user: { role: 'ACCOUNTANT_MANAGER', deletedAt: null } },
+            select: { user: { select: PERSON_SELECT } },
+          },
+        },
+      }),
+      prisma.regionScheduling.count({ where }),
+    ]),
+  ]);
+
+  return {
+    items: items.map((rs) => serializeAllBranchRow(rs, allBranchAms)),
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit) || 1,
+    },
+  };
+};
+
+/**
+ * GET /company/all-branches/:id
+ *
+ * `:id` is a RegionScheduling id (what /company/all-branches returns per
+ * row) — NOT a ScheduledVisit id. Returns the branch metadata + required
+ * tasks + EVERY scheduled visit for the branch (across months), each with
+ * its supervisor, manager (ADDITIONAL only), and per-V status. Optional
+ * year/month narrows which scheduled visits come back.
+ *
+ * Authorization is folded into the lookup via scopeForUser: an out-of-scope
+ * or missing branch returns 404 (object-capability pattern, same as
+ * getMyBranchDetail) so we never leak other companies' branches.
+ */
+const getMyAllBranchDetail = async (userId, regionSchedulingId, { year, month } = {}) => {
+  const user = await loadUserWithCompany(userId);
+  const scope = await scopeForUser(user);
+
+  const periodClause = schedulePeriodClause(year, month);
+
+  const [allBranchAms, rs] = await Promise.all([
+    companyAllBranchAccountantManagers(user.company.id),
+    prisma.regionScheduling.findFirst({
+      where: { id: regionSchedulingId, deletedAt: null, ...scope },
+      include: {
+        requiredTasks: { orderBy: [{ visitType: 'asc' }, { sortOrder: 'asc' }] },
+        // Explicit accountant-manager assignments for this branch.
+        accountantAssignments: {
+          where: { user: { role: 'ACCOUNTANT_MANAGER', deletedAt: null } },
+          select: { user: { select: PERSON_SELECT } },
+        },
+        scheduledVisits: {
+          where: periodClause || { deletedAt: null },
+          orderBy: { firstVisitDate: 'asc' },
+          include: {
+            monthlySchedule: {
+              select: { year: true, month: true, supervisor: { select: PERSON_SELECT } },
+            },
+            assignedToSupervisor: { select: PERSON_SELECT },
+            visitInstances: {
+              where: { deletedAt: null },
+              orderBy: { visitOrder: 'asc' },
+              select: {
+                id: true,
+                visitOrder: true,
+                scheduledDate: true,
+                status: true,
+                documentationStatus: true,
+              },
+            },
+          },
+        },
+      },
+    }),
+  ]);
+
+  if (!rs) {
+    // Either truly missing or out-of-scope. We do not distinguish on purpose.
+    throw ApiError.notFound('Branch not found');
+  }
+
+  return {
+    id: rs.id,
+    companyName: rs.companyName,
+    branchName: rs.branchName,
+    categoryName: rs.categoryName,
+    brandName: [rs.branchName, rs.categoryName].filter(Boolean).join(' — '),
+    branchNumber: rs.branchNumber,
+    city: rs.city,
+    region: rs.region,
+    address: rs.address,
+    location: rs.location,
+    latitude: rs.latitude,
+    longitude: rs.longitude,
+    numberOfVisits: rs.numberOfVisits,
+    code: rs.code,
+    visitTypes: visitTypesFor(rs.numberOfVisits),
+    requiredTasks: rs.requiredTasks.map((t) => ({
+      id: t.id,
+      visitType: t.visitType,
+      titleAr: t.titleAr,
+      titleEn: t.titleEn,
+      sortOrder: t.sortOrder,
+    })),
+    assignedSupervisors: collectSupervisors(rs.scheduledVisits),
+    assignedAccountantManagers: collectAccountantManagers(rs.accountantAssignments, allBranchAms),
+    // One entry per scheduled visit (month) the branch belongs to.
+    schedules: rs.scheduledVisits.map((sv) => ({
+      scheduledVisitId: sv.id,
+      type: sv.type,
+      year: sv.monthlySchedule?.year ?? null,
+      month: sv.monthlySchedule?.month ?? null,
+      firstVisitDate: sv.firstVisitDate,
+      supervisor: visitSupervisor(sv),
+      instances: sv.visitInstances.map((i) => ({
+        id: i.id,
+        visitOrder: i.visitOrder,
+        scheduledDate: i.scheduledDate,
+        status: i.status,
+        documentationStatus: i.documentationStatus,
+      })),
+    })),
+  };
+};
+
 const monthBoundsUTC = (year, month) => {
   const start = new Date(Date.UTC(year, month - 1, 1));
   const end = new Date(Date.UTC(year, month, 1));
@@ -1044,6 +1378,8 @@ module.exports = {
   getMyProfile,
   getMyDashboardStats,
   listMyBranches,
+  listAllMyBranches,
+  getMyAllBranchDetail,
   getMyBranchDetail,
   getMyMonthlyReport,
   listMyBranchesForExport,

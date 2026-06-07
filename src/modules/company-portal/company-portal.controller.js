@@ -96,6 +96,34 @@ const listBranches = asyncHandler(async (req, res) => {
 });
 
 /**
+ * GET /company/all-branches
+ * Flat list of the company's ENTIRE branch catalogue (every imported
+ * RegionScheduling row), independent of any monthly schedule. Use this for
+ * "all 200 branches" views; use /company/branches for the month-scoped list
+ * with per-visit status.
+ */
+const listAllBranches = asyncHandler(async (req, res) => {
+  const data = await service.listAllMyBranches(req.user.id, req.validatedQuery);
+  res.json({ success: true, data });
+});
+
+/**
+ * GET /company/all-branches/:id
+ * Full detail for one branch (by RegionScheduling id): metadata, required
+ * tasks, assigned supervisors/managers, and every scheduled visit with its
+ * per-V status. Optional ?year & ?month narrow the scheduled visits.
+ * Returns 404 if the branch isn't in the caller's scope.
+ */
+const allBranchDetail = asyncHandler(async (req, res) => {
+  const data = await service.getMyAllBranchDetail(
+    req.user.id,
+    req.params.id,
+    req.validatedQuery || {},
+  );
+  res.json({ success: true, data });
+});
+
+/**
  * GET /company/branches/:id
  * Full branch + per-visit detail (status, photos, tasks, documentation).
  * Returns 404 if the id isn't in the caller's scope (object-capability
@@ -248,6 +276,8 @@ module.exports = {
   myProfile,
   dashboard,
   listBranches,
+  listAllBranches,
+  allBranchDetail,
   branchDetail,
   exportBranchPdf,
   monthlyReport,

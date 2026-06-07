@@ -68,6 +68,59 @@ const listBranchesQuerySchema = Joi.object({
 });
 
 /**
+ * GET /company/all-branches query schema.
+ *
+ * Unlike /company/branches (which lists ScheduledVisit rows for one month
+ * and carries per-visit status), this endpoint lists the company's ENTIRE
+ * branch catalogue straight from RegionScheduling — every branch the admin
+ * imported, whether or not it has a visit scheduled this month. So there is
+ * deliberately NO year/month, dateFrom/dateTo, or visitStatus filter here:
+ * those only make sense against scheduled visits.
+ *
+ * Defaults: page=1, limit=20, sort=name (alphabetical by brand) — a stable,
+ * predictable order for a flat catalogue list.
+ */
+const listAllBranchesQuerySchema = Joi.object({
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(100).default(20),
+  sort: Joi.string().valid('name', 'newest', 'oldest').default('name'),
+
+  // Free-text search across the branch's own fields.
+  q: Joi.string().trim().max(100).optional(),
+
+  // Per-field filters (same vocabulary as /company/branches).
+  branchName: Joi.string().trim().max(100).optional(),
+  categoryName: Joi.string().trim().max(100).optional(),
+  branchNumber: Joi.string().trim().max(50).optional(),
+  city: Joi.string().trim().max(100).optional(),
+  region: Joi.string().trim().max(100).optional(),
+  address: Joi.string().trim().max(200).optional(),
+  code: Joi.string().trim().max(50).optional(),
+
+  // "Has at least V<n>" → numberOfVisits >= n.
+  visitType: Joi.number().integer().min(1).max(4).optional(),
+
+  /**
+   * Optional period filter. When year and/or month are passed, the list
+   * narrows to branches that have a scheduled visit in that period, and
+   * each row's `assignedSupervisors` reflects only that period. Omitting
+   * both keeps the full catalogue with all-time assignments.
+   */
+  year: Joi.number().integer().min(2024).max(2100).optional(),
+  month: Joi.number().integer().min(1).max(12).optional(),
+});
+
+/**
+ * GET /company/all-branches/:id query schema. Optional year/month narrow
+ * which scheduled visits (and therefore supervisors/status) the detail
+ * returns. Omitting both returns every scheduled visit for the branch.
+ */
+const allBranchDetailQuerySchema = Joi.object({
+  year: Joi.number().integer().min(2024).max(2100).optional(),
+  month: Joi.number().integer().min(1).max(12).optional(),
+});
+
+/**
  * GET /company/dashboard query schema.
  *
  * Both bounds are optional and inclusive; they filter on the visit's
@@ -126,6 +179,8 @@ module.exports = {
   idParamSchema,
   dashboardQuerySchema,
   listBranchesQuerySchema,
+  listAllBranchesQuerySchema,
+  allBranchDetailQuerySchema,
   monthlyReportQuerySchema,
   submitContactSchema,
   listContactMessagesQuerySchema,

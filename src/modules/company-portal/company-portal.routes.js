@@ -8,6 +8,8 @@ const {
   idParamSchema,
   dashboardQuerySchema,
   listBranchesQuerySchema,
+  listAllBranchesQuerySchema,
+  allBranchDetailQuerySchema,
   monthlyReportQuerySchema,
   submitContactSchema,
   listContactMessagesQuerySchema,
@@ -44,6 +46,29 @@ router.get(
   '/branches',
   validate(listBranchesQuerySchema, 'query'),
   controller.listBranches,
+);
+
+/**
+ * Full branch catalogue (every imported branch for the company), NOT
+ * scoped to a month and with no per-visit status. Separate path from
+ * /branches so the existing month-scoped list stays untouched.
+ */
+router.get(
+  '/all-branches',
+  validate(listAllBranchesQuerySchema, 'query'),
+  controller.listAllBranches,
+);
+
+/**
+ * Full detail for one branch by RegionScheduling id. Mounted after the
+ * bare /all-branches so the literal path wins; no export sub-paths here yet,
+ * so :id needs no before-ordering tricks.
+ */
+router.get(
+  '/all-branches/:id',
+  validate(idParamSchema, 'params'),
+  validate(allBranchDetailQuerySchema, 'query'),
+  controller.allBranchDetail,
 );
 
 /**
