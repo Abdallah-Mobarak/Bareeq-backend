@@ -13,7 +13,7 @@ const lookupService = require('../admin-lookups/admin-lookups.service');
  */
 
 const serializeLookup = (l) =>
-  l ? { id: l.id, titleAr: l.titleAr, titleEn: l.titleEn } : null;
+  l ? { id: l.id, titleAr: l.titleAr, titleEn: l.titleEn, percentage: l.percentage } : null;
 
 const serializeClient = (c) => ({
   id: c.id,

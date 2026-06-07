@@ -23,6 +23,16 @@ const createLookupSchema = Joi.object({
   titleAr: Joi.string().trim().min(1).max(200).required(),
   titleEn: Joi.string().trim().max(200).optional().allow(null, ''),
   sortOrder: Joi.number().integer().min(-1000).max(1000).optional(),
+  /**
+   * Tax percentage (0–100). Required for TAX_TYPE so the monthly-sales
+   * dropdown can render "VAT 15%"; forbidden for every other type since
+   * the column is meaningless there.
+   */
+  percentage: Joi.number().min(0).max(100).when('type', {
+    is: 'TAX_TYPE',
+    then: Joi.required(),
+    otherwise: Joi.forbidden(),
+  }),
 });
 
 /**
@@ -30,11 +40,15 @@ const createLookupSchema = Joi.object({
  * `type` is omitted on purpose: re-typing a row is destructive (it
  * would orphan every FK pointing at it), so if a row was created in
  * the wrong category, the admin deletes + recreates instead.
+ *
+ * `percentage` is accepted here (TAX_TYPE rows). The service guards that it
+ * is only set on TAX_TYPE rows, since `type` isn't in the update body.
  */
 const updateLookupSchema = Joi.object({
   titleAr: Joi.string().trim().min(1).max(200).optional(),
   titleEn: Joi.string().trim().max(200).optional().allow(null, ''),
   sortOrder: Joi.number().integer().min(-1000).max(1000).optional(),
+  percentage: Joi.number().min(0).max(100).optional(),
 }).min(1);
 
 const listLookupsQuerySchema = Joi.object({

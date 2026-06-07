@@ -21,6 +21,8 @@ const serialize = (l) => ({
   titleAr: l.titleAr,
   titleEn: l.titleEn,
   sortOrder: l.sortOrder,
+  // TAX_TYPE only; null for every other type.
+  percentage: l.percentage,
   createdAt: l.createdAt,
   updatedAt: l.updatedAt,
 });
@@ -42,13 +44,15 @@ const loadActiveByType = async (id, expectedType) => {
   return row;
 };
 
-const createLookup = async ({ type, titleAr, titleEn, sortOrder }) => {
+const createLookup = async ({ type, titleAr, titleEn, sortOrder, percentage }) => {
   const row = await prisma.lookup.create({
     data: {
       type,
       titleAr,
       titleEn: titleEn || null,
       sortOrder: sortOrder ?? 0,
+      // Validation already guarantees percentage is present iff TAX_TYPE.
+      percentage: percentage ?? null,
     },
   });
   logger.info({ lookupId: row.id, type }, 'Lookup created');
@@ -105,6 +109,14 @@ const updateLookup = async (id, body) => {
   if (body.titleAr !== undefined) data.titleAr = body.titleAr;
   if (body.titleEn !== undefined) data.titleEn = body.titleEn || null;
   if (body.sortOrder !== undefined) data.sortOrder = body.sortOrder;
+  if (body.percentage !== undefined) {
+    // percentage is only meaningful on TAX_TYPE rows; reject it elsewhere
+    // (validation can't check this — `type` isn't in the update body).
+    if (existing.type !== 'TAX_TYPE') {
+      throw ApiError.badRequest('percentage can only be set on TAX_TYPE lookups');
+    }
+    data.percentage = body.percentage;
+  }
 
   const updated = await prisma.lookup.update({ where: { id }, data });
   logger.info({ lookupId: id }, 'Lookup updated');

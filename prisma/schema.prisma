@@ -762,6 +762,11 @@ model Lookup {
   /// reorder by setting this in the PATCH body.
   sortOrder Int @default(0) @map("sort_order")
 
+  /// TAX_TYPE only: the tax percentage (e.g. 15.00 for "VAT 15%"), so the
+  /// monthly-sales dropdown can render "VAT 15%" and reports can compute
+  /// tax. NULL for every other lookup type. Decimal(5,2) covers 0.00–999.99.
+  percentage Decimal? @db.Decimal(5, 2)
+
   /// Back-refs so Prisma surfaces the relations cleanly. We don't
   /// actually use them on read paths today; they exist for future
   /// "where is this lookup used?" admin tooling.
