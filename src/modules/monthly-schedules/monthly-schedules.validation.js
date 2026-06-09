@@ -61,8 +61,15 @@ const idParamSchema = Joi.object({
   id: Joi.string().required(),
 });
 
+// POST /monthly-schedules/announce-report — admin releases a month's report.
+const announceReportSchema = Joi.object({
+  year: Joi.number().integer().min(2024).max(2100).required(),
+  month: Joi.number().integer().min(1).max(12).required(),
+});
+
 module.exports = {
   createScheduleSchema,
   listSchedulesQuerySchema,
   idParamSchema,
+  announceReportSchema,
 };

@@ -21,4 +21,9 @@ const remove = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { message: 'Monthly schedule deleted' } });
 });
 
-module.exports = { create, list, getOne, remove };
+const announceReport = asyncHandler(async (req, res) => {
+  const result = await service.announceMonthlyReport(req.body);
+  res.json({ success: true, data: result });
+});
+
+module.exports = { create, list, getOne, remove, announceReport };

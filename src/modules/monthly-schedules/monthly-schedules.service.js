@@ -415,9 +415,66 @@ const deleteSchedule = async (id) => {
   logger.info({ scheduleId: id }, 'Monthly schedule soft-deleted (cascade)');
 };
 
+/**
+ * Announce that a month's report is ready to view (FRD §2.5 "Monthly report
+ * is now available for viewing"). Admin-triggered: the report itself is a
+ * live query, so this is the explicit "release" signal companies subscribe
+ * to. Notifies COMPANY_USER + ACCOUNTANT_MANAGER users of every company that
+ * actually had branches scheduled that month (no point alerting companies
+ * with no data). Idempotent enough to re-run; it just re-notifies.
+ */
+const announceMonthlyReport = async ({ year, month }) => {
+  // Companies with at least one (non-deleted) scheduled visit that month.
+  const visits = await prisma.scheduledVisit.findMany({
+    where: {
+      deletedAt: null,
+      monthlySchedule: { year, month, deletedAt: null },
+    },
+    select: { regionScheduling: { select: { companyName: true } } },
+  });
+  const companyNames = [
+    ...new Set(visits.map((v) => v.regionScheduling?.companyName).filter(Boolean)),
+  ];
+
+  if (companyNames.length === 0) {
+    return { year, month, notified: 0, companies: 0 };
+  }
+
+  const users = await prisma.user.findMany({
+    where: {
+      role: { in: ['COMPANY_USER', 'ACCOUNTANT_MANAGER'] },
+      status: 'ENABLED',
+      deletedAt: null,
+      company: { nameAr: { in: companyNames } },
+    },
+    select: { id: true },
+  });
+
+  await Promise.all(
+    users.map((u) =>
+      notify({
+        userId: u.id,
+        type: 'MONTHLY_REPORT_AVAILABLE',
+        titleAr: 'التقرير الشهري جاهز',
+        titleEn: 'Monthly report available',
+        bodyAr: `أصبح تقرير شهر ${month}/${year} متاحًا للعرض.`,
+        bodyEn: `The report for ${month}/${year} is now available to view.`,
+        data: { year, month },
+      }),
+    ),
+  );
+
+  logger.info(
+    { year, month, companies: companyNames.length, notified: users.length },
+    'Monthly report availability announced to companies',
+  );
+  return { year, month, notified: users.length, companies: companyNames.length };
+};
+
 module.exports = {
   createSchedule,
   listSchedules,
   getSchedule,
   deleteSchedule,
+  announceMonthlyReport,
 };
