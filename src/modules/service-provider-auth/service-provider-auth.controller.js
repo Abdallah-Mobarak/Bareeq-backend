@@ -1,6 +1,11 @@
 const { asyncHandler } = require('../../utils/asyncHandler');
 const service = require('./service-provider-auth.service');
 
+const listServiceTypes = asyncHandler(async (req, res) => {
+  const result = await service.listServiceTypes();
+  res.json({ success: true, data: result });
+});
+
 const requestSignup = asyncHandler(async (req, res) => {
   const result = await service.requestSignup(req.body);
   res.json({
@@ -46,6 +51,7 @@ const confirmPasswordReset = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
+  listServiceTypes,
   requestSignup,
   verifySignup,
   requestPasswordReset,

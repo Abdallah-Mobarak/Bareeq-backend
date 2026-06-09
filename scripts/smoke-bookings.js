@@ -142,23 +142,61 @@ const assertStatus = (label, res, expected) => {
   ok('Customer verify', custVfy, 201);
   const custAuth = { Authorization: `Bearer ${custVfy.body.data.accessToken}` };
 
-  // 3. SP signs up (still UNVERIFIED)
+  // 3. SP signs up (account starts DISABLED, pending admin approval;
+  //    serviceCategoryId is now required — FRD §2.1).
   const spEmail = `book-sp-${tag}@test.com`;
   const spSig = await req('POST', '/api/v1/auth/service-provider/signup', {
     email: spEmail,
     password: 'sppass123',
     nameAr: 'مزود',
+    serviceCategoryId: categoryId,
   });
   ok('SP signup', spSig);
   const spVfy = await req('POST', '/api/v1/auth/service-provider/signup/verify', {
     email: spEmail,
     password: 'sppass123',
     nameAr: 'مزود',
+    serviceCategoryId: categoryId,
     otp: spSig.body.data.otp,
   });
-  ok('SP verify (still unverified for KYC)', spVfy, 201);
-  const spAuth = { Authorization: `Bearer ${spVfy.body.data.accessToken}` };
-  const spUserId = spVfy.body.data.user.id;
+  ok('SP verify (no auto-login; pending approval)', spVfy, 201);
+  if (spVfy.body.data.status !== 'PENDING_APPROVAL') {
+    console.error('✗ SP verify should return PENDING_APPROVAL, not tokens');
+    process.exit(1);
+  }
+
+  // 3a. SP can't log in while disabled (FRD §2.1 "can't login if disabled").
+  const blockedLogin = await req('POST', '/api/v1/auth/mobile/login', {
+    identifier: spEmail,
+    password: 'sppass123',
+  });
+  assertStatus('SP login blocked while pending approval', blockedLogin, 403);
+
+  // 3b. Admin finds the SP and enables the account.
+  const spLookup = await req(
+    'GET',
+    `/api/v1/admin/service-providers?q=${encodeURIComponent(spEmail)}&limit=100`,
+    null,
+    adminAuth,
+  );
+  ok('Admin lists SP', spLookup);
+  const spRows = spLookup.body.items || spLookup.body.data?.items || [];
+  const spUserId = spRows.find((r) => r.email === spEmail).id;
+  const enableSp = await req(
+    'PATCH',
+    `/api/v1/admin/service-providers/${spUserId}/status`,
+    { status: 'ENABLED' },
+    adminAuth,
+  );
+  ok('Admin enables SP account', enableSp);
+
+  // 3c. SP logs in now that the account is enabled (still KYC-unverified).
+  const spLogin = await req('POST', '/api/v1/auth/mobile/login', {
+    identifier: spEmail,
+    password: 'sppass123',
+  });
+  ok('SP login after approval', spLogin);
+  const spAuth = { Authorization: `Bearer ${spLogin.body.data.accessToken}` };
 
   // 4. Unverified SP cannot access pool — 403
   const earlyPool = await req(
@@ -283,15 +321,20 @@ const assertStatus = (label, res, expected) => {
   // 12. Second SP tries to accept the same booking — 409 race
   const sp2Email = `book-sp2-${tag}@test.com`;
   const sp2Sig = await req('POST', '/api/v1/auth/service-provider/signup', {
-    email: sp2Email, password: 'sppass123', nameAr: 'مزود٢',
+    email: sp2Email, password: 'sppass123', nameAr: 'مزود٢', serviceCategoryId: categoryId,
   });
   ok('Second SP signup', sp2Sig);
   const sp2Vfy = await req('POST', '/api/v1/auth/service-provider/signup/verify', {
-    email: sp2Email, password: 'sppass123', nameAr: 'مزود٢', otp: sp2Sig.body.data.otp,
+    email: sp2Email, password: 'sppass123', nameAr: 'مزود٢', serviceCategoryId: categoryId, otp: sp2Sig.body.data.otp,
   });
   ok('Second SP verify', sp2Vfy, 201);
-  await req('PATCH', `/api/v1/admin/service-providers/${sp2Vfy.body.data.user.id}/kyc`, { decision: 'APPROVED' }, adminAuth);
-  const sp2Auth = { Authorization: `Bearer ${sp2Vfy.body.data.accessToken}` };
+  const sp2Lookup = await req('GET', `/api/v1/admin/service-providers?q=${encodeURIComponent(sp2Email)}&limit=100`, null, adminAuth);
+  const sp2Rows = sp2Lookup.body.items || sp2Lookup.body.data?.items || [];
+  const sp2UserId = sp2Rows.find((r) => r.email === sp2Email).id;
+  await req('PATCH', `/api/v1/admin/service-providers/${sp2UserId}/status`, { status: 'ENABLED' }, adminAuth);
+  await req('PATCH', `/api/v1/admin/service-providers/${sp2UserId}/kyc`, { decision: 'APPROVED' }, adminAuth);
+  const sp2Login = await req('POST', '/api/v1/auth/mobile/login', { identifier: sp2Email, password: 'sppass123' });
+  const sp2Auth = { Authorization: `Bearer ${sp2Login.body.data.accessToken}` };
   const raceAttempt = await req(
     'POST',
     `/api/v1/service-provider/bookings/${bookingId}/accept`,
@@ -308,6 +351,66 @@ const assertStatus = (label, res, expected) => {
     custAuth,
   );
   assertStatus('Cancel rejected for APPROVED', lateCancel, 409);
+
+  // 13b. Reject (per-SP dismissal) + dashboard stats.
+  //   Customer posts a fresh PENDING request; sp2 rejects it → it leaves
+  //   sp2's pool but stays available to the first SP, and sp2's rejected
+  //   counter goes up.
+  const booking3 = await req(
+    'POST',
+    '/api/v1/customer/bookings',
+    {
+      serviceId,
+      subcategoryIds: [subIds[0]],
+      scheduledDate: tomorrow,
+      paymentMethod: 'CASH',
+    },
+    custAuth,
+  );
+  ok('Customer creates 3rd booking (for reject test)', booking3, 201);
+  const booking3Id = booking3.body.data.id;
+
+  // FRD §2.4: SPs registered for the category get "New request" notifications.
+  const newReqNotifs = await req(
+    'GET',
+    '/api/v1/notifications?type=NEW_BOOKING_REQUEST&limit=10',
+    null,
+    spAuth,
+  );
+  ok('SP received NEW_BOOKING_REQUEST notif', newReqNotifs);
+  if (newReqNotifs.body.items.length === 0) {
+    console.error('✗ NEW_BOOKING_REQUEST notif missing'); process.exit(1);
+  }
+  console.log('  → matching SP notified of new request');
+
+  const sp2StatsBefore = await req('GET', '/api/v1/service-provider/bookings/stats', null, sp2Auth);
+  ok('SP2 dashboard stats', sp2StatsBefore);
+  const rejectedBefore = sp2StatsBefore.body.data.rejected;
+
+  const sp2PoolBefore = await req('GET', '/api/v1/service-provider/bookings/pool?limit=100', null, sp2Auth);
+  if (!sp2PoolBefore.body.items.some((b) => b.id === booking3Id)) {
+    console.error('✗ SP2 should see booking3 before rejecting'); process.exit(1);
+  }
+
+  const reject = await req('POST', `/api/v1/service-provider/bookings/${booking3Id}/reject`, null, sp2Auth);
+  ok('SP2 rejects booking3', reject);
+
+  const sp2PoolAfter = await req('GET', '/api/v1/service-provider/bookings/pool?limit=100', null, sp2Auth);
+  if (sp2PoolAfter.body.items.some((b) => b.id === booking3Id)) {
+    console.error('✗ booking3 should be gone from SP2 pool after reject'); process.exit(1);
+  }
+
+  // Still available to the first SP — dismissal is per-SP, not global.
+  const sp1Pool = await req('GET', '/api/v1/service-provider/bookings/pool?limit=100', null, spAuth);
+  if (!sp1Pool.body.items.some((b) => b.id === booking3Id)) {
+    console.error('✗ booking3 should still be visible to the first SP'); process.exit(1);
+  }
+
+  const sp2StatsAfter = await req('GET', '/api/v1/service-provider/bookings/stats', null, sp2Auth);
+  if (sp2StatsAfter.body.data.rejected !== rejectedBefore + 1) {
+    console.error(`✗ SP2 rejected count should be ${rejectedBefore + 1}, got ${sp2StatsAfter.body.data.rejected}`); process.exit(1);
+  }
+  console.log('  → reject is per-SP (dismissal); stats counters work');
 
   // 14. SP commits state transitions: start + complete
   const started = await req(
@@ -340,10 +443,43 @@ const assertStatus = (label, res, expected) => {
   if (completed.body.data.status !== 'COMPLETED') {
     console.error('✗ Status not COMPLETED'); process.exit(1);
   }
-  if (completed.body.data.paymentStatus !== 'PAID') {
-    console.error(`✗ CASH booking should auto-mark PAID, got ${completed.body.data.paymentStatus}`); process.exit(1);
+  // CASH is NOT auto-paid on completion any more — SP confirms separately.
+  if (completed.body.data.paymentStatus === 'PAID') {
+    console.error('✗ CASH should stay unpaid until "Amount Received"'); process.exit(1);
   }
-  console.log('  → CASH completion auto-marked PAID');
+  console.log('  → CASH completion leaves payment pending (awaits Amount Received)');
+
+  // 14a-pre. Withdrawal is blocked while cash commission is unsettled
+  //   (FRD §2.1 "withdrawal only if no commission owed"). The booking is
+  //   COMPLETED but Amount Received not confirmed yet → 409.
+  const earlyWd = await req(
+    'POST',
+    '/api/v1/service-provider/withdrawals',
+    { amount: 50, bankName: 'Test Bank', bankAccountIban: 'SA1234567890', accountHolderName: 'SP' },
+    spAuth,
+  );
+  assertStatus('Withdrawal blocked while cash commission unsettled', earlyWd, 409);
+
+  // 14a. "Amount Received" — SP confirms cash collected → PAID (FRD §2.3.1.1)
+  const cashConfirm = await req(
+    'POST',
+    `/api/v1/service-provider/bookings/${bookingId}/amount-received`,
+    null,
+    spAuth,
+  );
+  ok('SP confirms Amount Received', cashConfirm);
+  if (cashConfirm.body.data.paymentStatus !== 'PAID' || !cashConfirm.body.data.cashReceivedAt) {
+    console.error(`✗ Amount Received should mark PAID + set cashReceivedAt`); process.exit(1);
+  }
+  // Confirming twice → 409
+  const cashAgain = await req(
+    'POST',
+    `/api/v1/service-provider/bookings/${bookingId}/amount-received`,
+    null,
+    spAuth,
+  );
+  assertStatus('Double Amount-Received rejected', cashAgain, 409);
+  console.log('  → Amount Received marked CASH booking PAID');
 
   // 15. Customer makes a 2nd booking + cancels while PENDING
   const booking2 = await req(
@@ -394,6 +530,23 @@ const assertStatus = (label, res, expected) => {
   assertStatus('SP forbidden from /customer/bookings', xRole1, 403);
   const xRole2 = await req('GET', '/api/v1/service-provider/bookings', null, custAuth);
   assertStatus('Customer forbidden from /service-provider/bookings', xRole2, 403);
+
+  // 19. Profile soft-delete (FRD §2.1). sp2 has no active bookings/withdrawals.
+  const badDelete = await req('DELETE', '/api/v1/service-provider/profile', { password: 'wrongpass' }, sp2Auth);
+  assertStatus('Delete with wrong password rejected', badDelete, 401);
+
+  const del = await req('DELETE', '/api/v1/service-provider/profile', { password: 'sppass123' }, sp2Auth);
+  ok('SP soft-deletes own account', del);
+
+  const afterDelLogin = await req('POST', '/api/v1/auth/mobile/login', { identifier: sp2Email, password: 'sppass123' });
+  assertStatus('Deleted SP cannot log in', afterDelLogin, 401);
+
+  // Email slot freed — same email can register again.
+  const reSignup = await req('POST', '/api/v1/auth/service-provider/signup', {
+    email: sp2Email, password: 'sppass123', nameAr: 'مزود جديد', serviceCategoryId: categoryId,
+  });
+  ok('Deleted SP email can re-register', reSignup);
+  console.log('  → soft-delete: login blocked + email freed for re-registration');
 
   console.log('\n✓ All booking lifecycle smoke tests passed.');
 })().catch((e) => {

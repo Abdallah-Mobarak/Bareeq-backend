@@ -11,6 +11,21 @@ const accept = asyncHandler(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+const reject = asyncHandler(async (req, res) => {
+  const result = await service.rejectBooking(req.user.id, req.params.id);
+  res.json({ success: true, data: result });
+});
+
+const stats = asyncHandler(async (req, res) => {
+  const result = await service.getDashboardStats(req.user.id);
+  res.json({ success: true, data: result });
+});
+
+const amountReceived = asyncHandler(async (req, res) => {
+  const result = await service.confirmCashReceived(req.user.id, req.params.id);
+  res.json({ success: true, data: result });
+});
+
 const listMine = asyncHandler(async (req, res) => {
   const result = await service.listMine(req.user.id, req.validatedQuery);
   res.json({ success: true, ...result });
@@ -31,4 +46,14 @@ const complete = asyncHandler(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
-module.exports = { listPool, accept, listMine, getOne, start, complete };
+module.exports = {
+  listPool,
+  accept,
+  reject,
+  stats,
+  amountReceived,
+  listMine,
+  getOne,
+  start,
+  complete,
+};

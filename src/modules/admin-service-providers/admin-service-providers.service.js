@@ -159,6 +159,32 @@ const updateStatus = async (id, { status, reason }) => {
     include: { serviceProvider: true },
   });
 
+  // Notify the SP that their account was approved/enabled or disabled
+  // (FRD §2.4 — "approved by the Admin" / "disabled and pending approval").
+  if (status === 'ENABLED') {
+    await notify({
+      userId: id,
+      type: 'ACCOUNT_UNBLOCKED',
+      titleAr: 'تم تفعيل حسابك',
+      titleEn: 'Your account is now active',
+      bodyAr: 'وافقت الإدارة على حسابك. يمكنك الآن تسجيل الدخول واستلام الحجوزات.',
+      bodyEn: 'The admin approved your account. You can now log in and start receiving bookings.',
+    });
+  } else {
+    await notify({
+      userId: id,
+      type: 'ACCOUNT_BLOCKED',
+      titleAr: 'تم تعطيل حسابك',
+      titleEn: 'Your account has been disabled',
+      bodyAr: reason
+        ? `تم تعطيل حسابك من قبل الإدارة. السبب: ${reason}`
+        : 'تم تعطيل حسابك من قبل الإدارة.',
+      bodyEn: reason
+        ? `Your account has been disabled by the admin. Reason: ${reason}`
+        : 'Your account has been disabled by the admin.',
+    });
+  }
+
   logger.info(
     { userId: id, from: user.status, to: status, reason: reason || null },
     'Admin updated SP status',

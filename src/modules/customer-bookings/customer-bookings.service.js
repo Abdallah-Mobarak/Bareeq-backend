@@ -2,6 +2,7 @@ const { prisma } = require('../../infrastructure/database/prisma');
 const { ApiError } = require('../../utils/ApiError');
 const { logger } = require('../../utils/logger');
 const walletService = require('../../services/wallet.service');
+const { notify } = require('../notifications/notifications.service');
 
 /**
  * Customer-side booking flow — FRD §1.3.
@@ -161,6 +162,40 @@ const createBooking = async (customerId, data) => {
     { bookingId: created.id, customerId, totalCost, paymentMethod: data.paymentMethod },
     'Booking created (PENDING)',
   );
+
+  // Fan-out "New request for your service type" to every enabled+verified
+  // SP registered for this service's category (FRD §2.4). Best-effort: the
+  // booking is already committed, so a notification hiccup must not 500 it.
+  try {
+    const matchingSps = await prisma.serviceProvider.findMany({
+      where: {
+        serviceCategoryId: service.categoryId,
+        isVerified: true,
+        deletedAt: null,
+        user: { status: 'ENABLED', deletedAt: null },
+      },
+      select: { userId: true },
+    });
+    await Promise.all(
+      matchingSps.map((sp) =>
+        notify({
+          userId: sp.userId,
+          type: 'NEW_BOOKING_REQUEST',
+          titleAr: 'طلب خدمة جديد',
+          titleEn: 'New service request',
+          bodyAr: `وصل طلب جديد لخدمة "${created.service.titleAr}" يطابق تخصصك.`,
+          bodyEn: `A new "${created.service.titleEn || created.service.titleAr}" request matching your service type is available.`,
+          data: { bookingId: created.id, serviceId: created.serviceId },
+        }),
+      ),
+    );
+  } catch (err) {
+    logger.error(
+      { err, bookingId: created.id },
+      'Failed to fan-out NEW_BOOKING_REQUEST notifications',
+    );
+  }
+
   return serialize(created);
 };
 

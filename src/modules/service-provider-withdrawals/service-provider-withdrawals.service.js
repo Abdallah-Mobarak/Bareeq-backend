@@ -1,6 +1,7 @@
 const { prisma } = require('../../infrastructure/database/prisma');
 const { ApiError } = require('../../utils/ApiError');
 const { logger } = require('../../utils/logger');
+const { notify } = require('../notifications/notifications.service');
 
 /**
  * Service Provider withdrawal flow — FRD §3.5.2.
@@ -22,9 +23,12 @@ const money = (v) => (v === null || v === undefined ? null : Number(v).toFixed(2
 const serialize = (w) => ({
   id: w.id,
   amount: money(w.amount),
+  method: w.method,
   bankName: w.bankName,
   bankAccountIban: w.bankAccountIban,
   accountHolderName: w.accountHolderName,
+  walletName: w.walletName,
+  walletId: w.walletId,
   status: w.status,
   reviewedById: w.reviewedById,
   reviewedAt: w.reviewedAt,
@@ -44,6 +48,24 @@ const create = async (spUserId, data) => {
     throw ApiError.notFound('Service provider not found');
   }
 
+  // FRD §2.1: "Providers can request a withdrawal only if no commission
+  // is owed." Commission on CASH jobs is settled when the SP confirms
+  // "Amount Received"; until then those completed cash bookings are debts.
+  const owed = await prisma.booking.count({
+    where: {
+      assignedSpId: spUserId,
+      paymentMethod: 'CASH',
+      status: 'COMPLETED',
+      cashReceivedAt: null,
+      commissionAmount: { gt: 0 },
+    },
+  });
+  if (owed > 0) {
+    throw ApiError.conflict(
+      'You have unsettled commission on completed cash bookings. Confirm "Amount Received" on them before requesting a withdrawal.',
+    );
+  }
+
   const currentBalance = Number(sp.walletBalance);
   if (Number(data.amount) > currentBalance) {
     throw ApiError.badRequest(
@@ -60,13 +82,19 @@ const create = async (spUserId, data) => {
     );
   }
 
+  const method = data.method || 'BANK';
   const created = await prisma.withdrawalRequest.create({
     data: {
       spId: spUserId,
       amount: Number(data.amount).toFixed(2),
-      bankName: data.bankName,
-      bankAccountIban: data.bankAccountIban,
-      accountHolderName: data.accountHolderName,
+      method,
+      ...(method === 'EWALLET'
+        ? { walletName: data.walletName, walletId: data.walletId }
+        : {
+            bankName: data.bankName,
+            bankAccountIban: data.bankAccountIban,
+            accountHolderName: data.accountHolderName,
+          }),
     },
   });
 
@@ -74,6 +102,18 @@ const create = async (spUserId, data) => {
     { withdrawalId: created.id, spId: spUserId, amount: data.amount },
     'SP withdrawal requested (PENDING)',
   );
+
+  // FRD §2.4: "Withdrawal request submitted and under review."
+  await notify({
+    userId: spUserId,
+    type: 'WITHDRAWAL_SUBMITTED',
+    titleAr: 'تم استلام طلب السحب',
+    titleEn: 'Withdrawal request submitted',
+    bodyAr: `طلب سحب بمبلغ ${Number(data.amount).toFixed(2)} ريال قيد مراجعة الإدارة.`,
+    bodyEn: `Your withdrawal request for ${Number(data.amount).toFixed(2)} SAR is under admin review.`,
+    data: { withdrawalId: created.id },
+  });
+
   return serialize(created);
 };
 

@@ -6,7 +6,6 @@ const { sendEmail } = require('../../utils/mailer');
 const { signupOtpEmail, passwordResetOtpEmail } = require('../../utils/email-templates');
 const { logger } = require('../../utils/logger');
 const { config } = require('../../config/env');
-const authService = require('../auth/auth.service');
 const { notify } = require('../notifications/notifications.service');
 
 /**
@@ -36,11 +35,49 @@ const includeDevOtp = (payload, code) =>
 
 const findUserByEmail = (email) => prisma.user.findFirst({ where: { email, deletedAt: null } });
 
-const requestSignup = async ({ email, password: plainPassword, nameAr, nameEn, phone, bio }) => {
+/**
+ * Public list of "Service Types" for the signup dropdown (FRD §2.1 —
+ * "Service Type (Selectable, managed by admin)"). Reuses the active
+ * ServiceCategory catalog. No auth: the signup screen runs pre-login.
+ */
+const listServiceTypes = async () => {
+  const categories = await prisma.serviceCategory.findMany({
+    where: { isActive: true, deletedAt: null },
+    orderBy: [{ sortOrder: 'asc' }, { titleAr: 'asc' }],
+    select: { id: true, titleAr: true, titleEn: true, iconUrl: true },
+  });
+  return { items: categories };
+};
+
+/**
+ * Assert the SP-picked service type exists, is active, and not deleted.
+ * Throws a 400 otherwise so a stale/invalid id can't slip through signup.
+ */
+const assertServiceCategory = async (serviceCategoryId) => {
+  const category = await prisma.serviceCategory.findFirst({
+    where: { id: serviceCategoryId, isActive: true, deletedAt: null },
+    select: { id: true },
+  });
+  if (!category) {
+    throw ApiError.badRequest('Invalid service type');
+  }
+};
+
+const requestSignup = async ({
+  email,
+  password: plainPassword,
+  nameAr,
+  nameEn,
+  phone,
+  bio,
+  serviceCategoryId,
+}) => {
   const existing = await findUserByEmail(email);
   if (existing) {
     throw ApiError.conflict('Email is already registered');
   }
+
+  await assertServiceCategory(serviceCategoryId);
 
   if (phone) {
     const phoneClash = await prisma.user.findFirst({
@@ -80,8 +117,8 @@ const verifySignup = async ({
   nameEn,
   phone,
   bio,
+  serviceCategoryId,
   otp: submittedOtp,
-  deviceInfo,
 }) => {
   await otp.verifyCode(email, 'SERVICE_PROVIDER_SIGNUP', submittedOtp);
 
@@ -98,6 +135,8 @@ const verifySignup = async ({
     }
   }
 
+  await assertServiceCategory(serviceCategoryId);
+
   const passwordHash = await password.hash(plainPassword);
 
   const newUserId = await prisma.$transaction(async (tx) => {
@@ -109,6 +148,10 @@ const verifySignup = async ({
         role: 'SERVICE_PROVIDER',
         nameAr,
         nameEn: nameEn || null,
+        // FRD §2.1: the account is created DISABLED and stays unable to
+        // log in until an admin approves it (PATCH /admin/service-
+        // providers/:id/status → ENABLED). Login already blocks BLOCKED.
+        status: 'BLOCKED',
       },
     });
 
@@ -116,6 +159,7 @@ const verifySignup = async ({
       data: {
         userId: user.id,
         bio: bio || null,
+        serviceCategoryId,
         // kycStatus defaults to NOT_SUBMITTED — admin review happens
         // later via a separate KYC submission flow (Sprint 4).
       },
@@ -129,18 +173,18 @@ const verifySignup = async ({
     type: 'SERVICE_PROVIDER_WELCOME',
     titleAr: 'أهلاً بك في بريق',
     titleEn: 'Welcome to Bareeq',
-    bodyAr: `مرحباً ${nameAr}، حسابك جاهز. أكمل ملفك وارفع مستنداتك لبدء استلام الحجوزات.`,
-    bodyEn: `Hi ${nameEn || nameAr}, your account is ready. Complete your profile and submit KYC to start receiving bookings.`,
+    bodyAr: `مرحباً ${nameAr}، تم إنشاء حسابك وهو قيد مراجعة الإدارة. ستتمكن من تسجيل الدخول بعد الموافقة عليه.`,
+    bodyEn: `Hi ${nameEn || nameAr}, your account was created and is pending admin approval. You can log in once it is approved.`,
   });
 
-  logger.info({ email }, 'Service provider account created');
+  logger.info({ email }, 'Service provider account created (pending admin approval)');
 
-  return authService.login({
-    identifier: email,
-    password: plainPassword,
-    deviceInfo,
-    clientType: 'mobile',
-  });
+  // No auto-login: the account is disabled until an admin approves it.
+  return {
+    email,
+    status: 'PENDING_APPROVAL',
+    message: 'Your account was created and is pending admin approval.',
+  };
 };
 
 const requestPasswordReset = async ({ email }) => {
@@ -201,6 +245,7 @@ const confirmPasswordReset = async ({ email, otp: submittedOtp, newPassword }) =
 };
 
 module.exports = {
+  listServiceTypes,
   requestSignup,
   verifySignup,
   requestPasswordReset,

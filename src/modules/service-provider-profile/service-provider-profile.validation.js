@@ -41,4 +41,10 @@ const changePasswordSchema = Joi.object({
   return value;
 }, 'password-mismatch-check');
 
-module.exports = { updateSchema, changePasswordSchema };
+// "Delete account" (FRD §2.1 Profile). Password confirmation guards
+// against accidental / hijacked-session deletion.
+const deleteAccountSchema = Joi.object({
+  password: passwordField.required(),
+});
+
+module.exports = { updateSchema, changePasswordSchema, deleteAccountSchema };

@@ -21,4 +21,12 @@ const changePassword = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports = { getProfile, updateProfile, changePassword };
+const deleteAccount = asyncHandler(async (req, res) => {
+  await service.deleteAccount(req.user.id, req.body);
+  res.json({
+    success: true,
+    data: { message: 'Your account has been deleted.' },
+  });
+});
+
+module.exports = { getProfile, updateProfile, changePassword, deleteAccount };

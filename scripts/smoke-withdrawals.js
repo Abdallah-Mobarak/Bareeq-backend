@@ -117,21 +117,27 @@ const assertEq = (label, actual, expected) => {
   const custAuth = { Authorization: `Bearer ${custVfy.body.data.accessToken}` };
   const custUserId = custVfy.body.data.user.id;
 
-  // SP
+  // SP — signs up DISABLED (needs serviceCategoryId + admin approval now).
   const spEmail = `sp-wd-${tag}@test.com`;
   const spSig = await req('POST', '/api/v1/auth/service-provider/signup', {
-    email: spEmail, password: 'sppass123', nameAr: 'مزود',
+    email: spEmail, password: 'sppass123', nameAr: 'مزود', serviceCategoryId: cat.body.data.id,
   });
   const spVfy = await req('POST', '/api/v1/auth/service-provider/signup/verify', {
-    email: spEmail, password: 'sppass123', nameAr: 'مزود', otp: spSig.body.data.otp,
+    email: spEmail, password: 'sppass123', nameAr: 'مزود', serviceCategoryId: cat.body.data.id, otp: spSig.body.data.otp,
   });
-  ok('SP ready', spVfy, 201);
-  const spAuth = { Authorization: `Bearer ${spVfy.body.data.accessToken}` };
-  const spUserId = spVfy.body.data.user.id;
+  ok('SP signed up (pending approval)', spVfy, 201);
 
-  await req('PATCH', `/api/v1/admin/service-providers/${spUserId}/kyc`,
-    { decision: 'APPROVED' }, adminAuth);
-  ok('SP KYC approved', { status: 200 });
+  const spLookup = await req('GET', `/api/v1/admin/service-providers?q=${encodeURIComponent(spEmail)}&limit=100`, null, adminAuth);
+  const spRows = spLookup.body.items || spLookup.body.data?.items || [];
+  const spUserId = spRows.find((r) => r.email === spEmail).id;
+
+  await req('PATCH', `/api/v1/admin/service-providers/${spUserId}/status`, { status: 'ENABLED' }, adminAuth);
+  await req('PATCH', `/api/v1/admin/service-providers/${spUserId}/kyc`, { decision: 'APPROVED' }, adminAuth);
+  ok('SP enabled + KYC approved', { status: 200 });
+
+  const spLogin = await req('POST', '/api/v1/auth/mobile/login', { identifier: spEmail, password: 'sppass123' });
+  ok('SP login', spLogin);
+  const spAuth = { Authorization: `Bearer ${spLogin.body.data.accessToken}` };
 
   // Top up customer + book + complete → SP earns 180 net
   await req('POST', `/api/v1/admin/wallets/${custUserId}/topup`,
@@ -171,6 +177,14 @@ const assertEq = (label, actual, expected) => {
   ok('Valid withdrawal submitted', w1, 201);
   assertEq('  status', w1.body.data.status, 'PENDING');
   const w1Id = w1.body.data.id;
+
+  // FRD §2.4: "Withdrawal request submitted and under review."
+  const submittedNotif = await req('GET',
+    '/api/v1/notifications?type=WITHDRAWAL_SUBMITTED&limit=10', null, spAuth);
+  ok('SP received WITHDRAWAL_SUBMITTED notif', submittedNotif);
+  if (submittedNotif.body.items.length === 0) {
+    console.error('✗ WITHDRAWAL_SUBMITTED notif missing'); process.exit(1);
+  }
 
   // ----- 4. Second concurrent PENDING → 409 -----
   const w1Dup = await req('POST', '/api/v1/service-provider/withdrawals', {
@@ -282,12 +296,37 @@ const assertEq = (label, actual, expected) => {
     console.error('✗ WITHDRAWAL_REJECTED notif missing'); process.exit(1);
   }
 
+  // ----- 7b. E-Wallet withdrawal method (FRD §2.1) -----
+  const ewBadBankFields = await req('POST', '/api/v1/service-provider/withdrawals', {
+    amount: 50, method: 'EWALLET', bankName: 'X', bankAccountIban: 'SA12345678', accountHolderName: 'Y',
+  }, spAuth);
+  assertStatus('EWALLET rejects bank fields', ewBadBankFields, 400);
+
+  const ewMissing = await req('POST', '/api/v1/service-provider/withdrawals', {
+    amount: 50, method: 'EWALLET',
+  }, spAuth);
+  assertStatus('EWALLET requires wallet fields', ewMissing, 400);
+
+  const ew = await req('POST', '/api/v1/service-provider/withdrawals', {
+    amount: 50, method: 'EWALLET', walletName: 'STC Pay', walletId: '0551234567',
+  }, spAuth);
+  ok('E-Wallet withdrawal submitted', ew, 201);
+  assertEq('  method', ew.body.data.method, 'EWALLET');
+  assertEq('  walletName', ew.body.data.walletName, 'STC Pay');
+  assertEq('  walletId', ew.body.data.walletId, '0551234567');
+  if (ew.body.data.bankName !== null) {
+    console.error('✗ bank fields should be null for EWALLET'); process.exit(1);
+  }
+  await req('POST', `/api/v1/service-provider/withdrawals/${ew.body.data.id}/cancel`,
+    { reason: 'test cleanup' }, spAuth);
+  console.log('  → E-Wallet method persisted; bank fields null');
+
   // ----- 8. SP can list own + filter -----
   const myList = await req('GET',
     '/api/v1/service-provider/withdrawals?limit=100', null, spAuth);
   ok('SP lists own withdrawals', myList);
-  assertEq('  Count (1 cancelled + 1 approved + 1 rejected)',
-    myList.body.items.length, 3);
+  assertEq('  Count (2 cancelled + 1 approved + 1 rejected)',
+    myList.body.items.length, 4);
 
   // ----- 9. Ledger drift check -----
   const sp = await prisma.serviceProvider.findFirst({ where: { userId: spUserId } });

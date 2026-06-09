@@ -16,6 +16,9 @@ const router = Router();
  * Mounted at /auth/service-provider in src/routes/index.js.
  */
 
+// Public "Service Type" dropdown for the signup screen (FRD §2.1).
+router.get('/service-types', controller.listServiceTypes);
+
 router.post('/signup', validate(signupRequestSchema), controller.requestSignup);
 router.post('/signup/verify', validate(signupVerifySchema), controller.verifySignup);
 

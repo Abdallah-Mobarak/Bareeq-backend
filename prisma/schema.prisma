@@ -133,6 +133,7 @@ enum NotificationType {
   BOOKING_COMPLETED
 
   // Booking lifecycle (SP's view)
+  NEW_BOOKING_REQUEST // a new request matching the SP's service type entered the pool
   REVIEW_RECEIVED
 
   // Generic / admin-pushed
@@ -142,6 +143,7 @@ enum NotificationType {
   TOPUP_RECEIVED
 
   // Withdrawal lifecycle (Sprint 4 SP cash-out)
+  WITHDRAWAL_SUBMITTED // SP's request was received and is under admin review
   WITHDRAWAL_APPROVED
   WITHDRAWAL_REJECTED
 
@@ -169,6 +171,15 @@ enum WithdrawalStatus {
   APPROVED
   REJECTED
   CANCELLED
+}
+
+/// How the SP wants to receive a withdrawal (FRD §2.1 Wallet → Withdrawal
+/// Methods). BANK uses bankName/bankAccountIban/accountHolderName; EWALLET
+/// uses walletName/walletId. The validation layer enforces the right set
+/// per method.
+enum WithdrawalMethod {
+  BANK
+  EWALLET
 }
 
 /// Direction + intent of a WalletTransaction. The sign is implied:
@@ -299,8 +310,10 @@ model User {
 
   // Marketplace bookings — customer creates them, SP gets assigned
   // when they accept (so assignedSpId is also a User FK).
-  bookingsAsCustomer Booking[] @relation("BookingCustomer")
-  bookingsAsSp       Booking[] @relation("BookingSp")
+  bookingsAsCustomer Booking[]          @relation("BookingCustomer")
+  bookingsAsSp       Booking[]          @relation("BookingSp")
+  // Pool requests this SP dismissed ("Reject" on the pending screen).
+  bookingDismissals  BookingDismissal[] @relation("BookingDismissalSp")
 
   // Marketplace reviews — customer authors them; SP gets reviewed.
   reviewsAuthored Review[] @relation("ReviewCustomer")
@@ -1249,6 +1262,13 @@ model ServiceProvider {
   profilePicture String? @map("profile_picture")
   bio            String?
 
+  /// "Service Type" the SP registered for (FRD §2.1 Sign-Up — selectable,
+  /// admin-managed). Reuses the marketplace ServiceCategory catalog: pending
+  /// requests are routed to the SP when booking.service.categoryId matches.
+  /// Nullable so existing rows and in-progress signups stay valid.
+  serviceCategoryId String?          @map("service_category_id")
+  serviceCategory   ServiceCategory? @relation(fields: [serviceCategoryId], references: [id])
+
   // ── KYC / verification (Sprint 4 admin review flow) ────────────────
   /// Convenience flag derived from kycStatus = APPROVED. Kept as its
   /// own column so list queries don't have to compare enums.
@@ -1270,6 +1290,7 @@ model ServiceProvider {
 
   @@index([kycStatus])
   @@index([isVerified])
+  @@index([serviceCategoryId])
   @@index([deletedAt])
   @@map("service_providers")
 }
@@ -1326,6 +1347,9 @@ model ServiceCategory {
   sortOrder Int     @default(0) @map("sort_order")
 
   services Service[]
+
+  /// SPs who registered this category as their "Service Type" (FRD §2.1).
+  serviceProviders ServiceProvider[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -1472,6 +1496,10 @@ model Booking {
   approvedAt         DateTime? @map("approved_at")
   startedAt          DateTime? @map("started_at")
   completedAt        DateTime? @map("completed_at")
+  /// When the SP confirmed "Amount Received" for a CASH booking (FRD
+  /// §2.3.1.1). NULL for non-cash or until the SP confirms. Completion no
+  /// longer auto-marks CASH as paid — this explicit step does.
+  cashReceivedAt     DateTime? @map("cash_received_at")
   cancelledAt        DateTime? @map("cancelled_at")
   cancellationReason String?   @map("cancellation_reason")
 
@@ -1492,6 +1520,10 @@ model Booking {
   /// disputes over its lifetime (customer + SP each raise one, or the
   /// same user files twice for different issues).
   disputes Dispute[]
+
+  /// Per-SP "Reject" records. The booking stays in the open pool for
+  /// everyone else; it just disappears from each dismissing SP's list.
+  dismissals BookingDismissal[]
 
   @@index([customerId, status])
   @@index([assignedSpId, status])
@@ -1521,6 +1553,24 @@ model BookingSubcategory {
   @@unique([bookingId, subcategoryId])
   @@index([bookingId])
   @@map("booking_subcategories")
+}
+
+/// One row per (SP, booking) the SP "rejected" on their pending screen
+/// (FRD §2.2.2 "Reject Request → removed from Pending Requests"). In the
+/// open-pool model this is a per-SP dismissal, NOT a global rejection:
+/// the booking stays PENDING and visible to every other matching SP.
+model BookingDismissal {
+  id        String  @id @default(cuid())
+  bookingId String  @map("booking_id")
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  spId      String  @map("sp_id")
+  sp        User    @relation("BookingDismissalSp", fields: [spId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([bookingId, spId])
+  @@index([spId])
+  @@map("booking_dismissals")
 }
 
 // ============================================
@@ -1788,10 +1838,20 @@ model WithdrawalRequest {
   /// debited from the wallet at admin-approval time.
   amount Decimal @db.Decimal(12, 2)
 
-  // SP-provided bank details for THIS request
-  bankName          String @map("bank_name")
-  bankAccountIban   String @map("bank_account_iban")
-  accountHolderName String @map("account_holder_name")
+  /// Withdrawal channel for THIS request. Defaults to BANK so existing
+  /// rows (all bank transfers) stay correct after the migration.
+  method WithdrawalMethod @default(BANK)
+
+  // SP-provided BANK details (present when method = BANK). Nullable now
+  // that EWALLET is a valid method; the validation layer requires them
+  // only for BANK requests.
+  bankName          String? @map("bank_name")
+  bankAccountIban   String? @map("bank_account_iban")
+  accountHolderName String? @map("account_holder_name")
+
+  // SP-provided E-WALLET details (present when method = EWALLET).
+  walletName String? @map("wallet_name")
+  walletId   String? @map("wallet_id")
 
   status WithdrawalStatus @default(PENDING)
 

@@ -115,4 +115,78 @@ const changePassword = async (userId, { currentPassword, newPassword }) => {
   logger.info({ userId }, 'Service provider password changed');
 };
 
-module.exports = { getProfile, updateProfile, changePassword };
+/**
+ * Soft-delete the SP's own account (FRD §2.1 "Delete account").
+ *
+ * Guards before deleting:
+ *   - active bookings (APPROVED / IN_PROGRESS) — finish them first, a
+ *     customer is mid-service.
+ *   - a PENDING withdrawal — money is in flight; resolve it first.
+ *
+ * Cleanup on delete:
+ *   - soft-delete the User + ServiceProvider satellite (deletedAt).
+ *   - status = BLOCKED so any lingering session is denied at login.
+ *   - revoke all refresh tokens.
+ *   - tombstone the unique email/phone so the SP can re-register later
+ *     (the original email stays embedded in the tombstone for audit).
+ */
+const deleteAccount = async (userId, { password: plainPassword }) => {
+  const user = await prisma.user.findFirst({
+    where: { id: userId, role: 'SERVICE_PROVIDER', deletedAt: null },
+  });
+  if (!user) {
+    throw ApiError.notFound('Service provider not found');
+  }
+
+  const matches = await password.compare(plainPassword, user.password);
+  if (!matches) {
+    throw ApiError.unauthorized('Password is incorrect');
+  }
+
+  const activeBookings = await prisma.booking.count({
+    where: { assignedSpId: userId, status: { in: ['APPROVED', 'IN_PROGRESS'] } },
+  });
+  if (activeBookings > 0) {
+    throw ApiError.conflict(
+      'You have active bookings in progress. Complete them before deleting your account.',
+    );
+  }
+
+  const pendingWithdrawal = await prisma.withdrawalRequest.findFirst({
+    where: { spId: userId, status: 'PENDING' },
+  });
+  if (pendingWithdrawal) {
+    throw ApiError.conflict(
+      'You have a pending withdrawal request. Resolve it before deleting your account.',
+    );
+  }
+
+  const now = new Date();
+  // Tombstone frees the @unique email/phone slots for re-registration
+  // while keeping the original email readable for audit.
+  const tombstoneEmail = `deleted+${now.getTime()}+${user.email}`.slice(0, 255);
+
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: userId },
+      data: {
+        deletedAt: now,
+        status: 'BLOCKED',
+        email: tombstoneEmail,
+        phone: null,
+      },
+    }),
+    prisma.serviceProvider.update({
+      where: { userId },
+      data: { deletedAt: now },
+    }),
+    prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: now },
+    }),
+  ]);
+
+  logger.info({ userId }, 'Service provider soft-deleted own account');
+};
+
+module.exports = { getProfile, updateProfile, changePassword, deleteAccount };

@@ -19,11 +19,39 @@ const createSchema = Joi.object({
     .messages({
       'number.min': `Minimum withdrawal amount is ${MIN_AMOUNT} SAR`,
     }),
-  bankName: Joi.string().trim().min(2).max(100).required(),
-  bankAccountIban: Joi.string().trim().min(8).max(50).required().messages({
-    'any.required': 'IBAN is required',
-  }),
-  accountHolderName: Joi.string().trim().min(2).max(100).required(),
+  // Withdrawal channel (FRD §2.1). Defaults to BANK for backward compat.
+  // Each method requires its own field set and forbids the other's.
+  method: Joi.string().valid('BANK', 'EWALLET').default('BANK'),
+
+  // BANK fields
+  bankName: Joi.string()
+    .trim()
+    .min(2)
+    .max(100)
+    .when('method', { is: 'BANK', then: Joi.required(), otherwise: Joi.forbidden() }),
+  bankAccountIban: Joi.string()
+    .trim()
+    .min(8)
+    .max(50)
+    .when('method', { is: 'BANK', then: Joi.required(), otherwise: Joi.forbidden() })
+    .messages({ 'any.required': 'IBAN is required' }),
+  accountHolderName: Joi.string()
+    .trim()
+    .min(2)
+    .max(100)
+    .when('method', { is: 'BANK', then: Joi.required(), otherwise: Joi.forbidden() }),
+
+  // E-WALLET fields
+  walletName: Joi.string()
+    .trim()
+    .min(2)
+    .max(100)
+    .when('method', { is: 'EWALLET', then: Joi.required(), otherwise: Joi.forbidden() }),
+  walletId: Joi.string()
+    .trim()
+    .min(3)
+    .max(100)
+    .when('method', { is: 'EWALLET', then: Joi.required(), otherwise: Joi.forbidden() }),
 });
 
 const cancelSchema = Joi.object({

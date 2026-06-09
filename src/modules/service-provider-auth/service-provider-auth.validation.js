@@ -18,6 +18,8 @@ const phoneField = Joi.string().trim().min(8).max(25).optional().allow(null, '')
 const nameArField = Joi.string().trim().min(2).max(100).required();
 const nameEnField = Joi.string().trim().min(2).max(100).optional().allow(null, '');
 const bioField = Joi.string().trim().max(2000).optional().allow(null, '');
+// "Service Type" the SP registers for (FRD §2.1) — a ServiceCategory id.
+const serviceCategoryIdField = Joi.string().trim().min(1).max(40).required();
 const otpField = Joi.string()
   .length(6)
   .pattern(/^\d{6}$/)
@@ -30,6 +32,7 @@ const signupRequestSchema = Joi.object({
   nameEn: nameEnField,
   phone: phoneField,
   bio: bioField,
+  serviceCategoryId: serviceCategoryIdField,
 });
 
 const signupVerifySchema = Joi.object({
@@ -39,6 +42,7 @@ const signupVerifySchema = Joi.object({
   nameEn: nameEnField,
   phone: phoneField,
   bio: bioField,
+  serviceCategoryId: serviceCategoryIdField,
   otp: otpField,
 });
 
