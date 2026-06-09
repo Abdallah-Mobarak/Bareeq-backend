@@ -11,4 +11,9 @@ const listTransactions = asyncHandler(async (req, res) => {
   res.json({ success: true, ...result });
 });
 
-module.exports = { getWallet, listTransactions };
+const listCommissions = asyncHandler(async (req, res) => {
+  const result = await service.listCommissions(req.user.id, req.validatedQuery);
+  res.json({ success: true, ...result });
+});
+
+module.exports = { getWallet, listTransactions, listCommissions };
