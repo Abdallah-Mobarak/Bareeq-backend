@@ -114,6 +114,7 @@ const listServices = async ({
   limit,
   q,
   categoryId,
+  subcategory,
   minRating,
   maxRating,
   minCost,
@@ -137,9 +138,20 @@ const listServices = async ({
         { titleEn: { contains: q, mode: 'insensitive' } },
       ],
     }),
-    // Hide services with no active subcategories — they would render
-    // a "0.00 SAR" cost on the customer card, which is misleading.
-    subcategories: { some: { deletedAt: null } },
+    // `some` does double duty: hide services with no active subcategories
+    // (a "0.00 SAR" card is misleading) AND, when a subcategory name is
+    // given, keep only services that have a matching one (§1.2.4).
+    subcategories: {
+      some: {
+        deletedAt: null,
+        ...(subcategory && {
+          OR: [
+            { titleAr: { contains: subcategory, mode: 'insensitive' } },
+            { titleEn: { contains: subcategory, mode: 'insensitive' } },
+          ],
+        }),
+      },
+    },
   };
 
   // We need every matching row to filter by computed total cost. For a

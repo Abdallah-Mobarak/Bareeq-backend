@@ -24,6 +24,9 @@ const servicesListSchema = Joi.object({
   ...paginationFields,
   q: Joi.string().trim().max(100).optional().allow(''),
   categoryId: Joi.string().optional(),
+  // Subcategory Name filter — §1.2.4 (matches a service that has a
+  // subcategory whose title contains this text).
+  subcategory: Joi.string().trim().max(100).optional().allow(''),
   // Rating Range filter — §1.2.4
   minRating: Joi.number().min(0).max(5).optional(),
   maxRating: Joi.number().min(0).max(5).optional(),

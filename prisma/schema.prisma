@@ -131,6 +131,8 @@ enum NotificationType {
   BOOKING_ACCEPTED
   BOOKING_STARTED
   BOOKING_COMPLETED
+  BOOKING_CANCELLED // customer cancelled a pending request (FRD §1.4)
+  REFUND_ISSUED // wallet refunded after a cancellation (FRD §1.4)
 
   // Booking lifecycle (SP's view)
   NEW_BOOKING_REQUEST // a new request matching the SP's service type entered the pool

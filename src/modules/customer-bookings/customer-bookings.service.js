@@ -299,6 +299,34 @@ const cancelMine = async (customerId, bookingId, { reason }) => {
     { bookingId, customerId, reason, paymentMethod: b.paymentMethod },
     'Booking cancelled by customer',
   );
+
+  // FRD §1.4: confirm the cancellation and, for WALLET bookings, the
+  // wallet refund. Best-effort — the cancellation is already committed.
+  try {
+    await notify({
+      userId: customerId,
+      type: 'BOOKING_CANCELLED',
+      titleAr: 'تم إلغاء الطلب',
+      titleEn: 'Request cancelled',
+      bodyAr: `تم إلغاء طلب "${updated.service.titleAr}".`,
+      bodyEn: `Your "${updated.service.titleEn || updated.service.titleAr}" request was cancelled.`,
+      data: { bookingId, serviceId: updated.serviceId },
+    });
+    if (b.paymentMethod === 'WALLET') {
+      await notify({
+        userId: customerId,
+        type: 'REFUND_ISSUED',
+        titleAr: 'تم رد المبلغ لمحفظتك',
+        titleEn: 'Refund issued to your wallet',
+        bodyAr: `تم رد ${Number(b.totalCost).toFixed(2)} ريال إلى محفظتك بعد الإلغاء.`,
+        bodyEn: `${Number(b.totalCost).toFixed(2)} SAR has been refunded to your wallet after cancellation.`,
+        data: { bookingId, amount: Number(b.totalCost).toFixed(2) },
+      });
+    }
+  } catch (err) {
+    logger.error({ err, bookingId }, 'Failed to send cancellation notifications');
+  }
+
   return serialize(updated);
 };
 
