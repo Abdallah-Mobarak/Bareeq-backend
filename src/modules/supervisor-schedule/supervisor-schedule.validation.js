@@ -20,6 +20,7 @@ const listMyBranchesQuerySchema = Joi.object({
   branchNumber: Joi.string().trim().max(50).optional().allow(''),
   city: Joi.string().trim().max(150).optional().allow(''),
   region: Joi.string().trim().max(150).optional().allow(''),
+  address: Joi.string().trim().max(300).optional().allow(''),
   code: Joi.string().trim().max(50).optional().allow(''),
 
   visitType: Joi.number().integer().min(1).max(4).optional(),

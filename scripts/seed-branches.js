@@ -106,18 +106,23 @@ const ensureSupervisor = async () => {
  * Find or create a NotImplementedReason — VisitInstance rows with
  * status = NOT_IMPLEMENTED need a non-null FK to one of these.
  */
-const ensureReason = async () => {
-  const existing = await prisma.notImplementedReason.findFirst({
-    where: { deletedAt: null },
-  });
-  if (existing) return existing;
+const DEFAULT_REASONS = [
+  { titleAr: 'الفرع مغلق', titleEn: 'Branch closed' },
+  // "Other" lets the supervisor pick a generic reason and type a free-text
+  // note (the app opens the Additional Notes box when this row is selected).
+  { titleAr: 'أخرى', titleEn: 'Other' },
+];
 
-  return prisma.notImplementedReason.create({
-    data: {
-      titleAr: 'الفرع مغلق',
-      titleEn: 'Branch closed',
-    },
-  });
+const ensureReason = async () => {
+  let first = null;
+  for (const r of DEFAULT_REASONS) {
+    const existing = await prisma.notImplementedReason.findFirst({
+      where: { titleEn: r.titleEn, deletedAt: null },
+    });
+    const row = existing || (await prisma.notImplementedReason.create({ data: r }));
+    if (!first) first = row;
+  }
+  return first;
 };
 
 const ensureBranch = async (b) => {

@@ -14,9 +14,16 @@ const listMyTasksQuerySchema = Joi.object({
   limit: Joi.number().integer().min(1).max(100).default(20),
   sort: Joi.string().valid('visitDate', 'newest', 'oldest').default('visitDate'),
 
+  // Unified free-text search box on the list screen — matches against
+  // company / branch / category / address in one OR group.
+  search: Joi.string().trim().max(200).optional().allow(''),
+
   companyName: Joi.string().trim().max(150).optional(),
   branchName: Joi.string().trim().max(150).optional(),
   brandName: Joi.string().trim().max(150).optional(),
+  // Category is free-text on AdditionalTask (FRD §3.9.2, no FK), so the
+  // app filters by name rather than a categoryId.
+  categoryName: Joi.string().trim().max(150).optional(),
   address: Joi.string().trim().max(300).optional(),
 
   status: Joi.string()

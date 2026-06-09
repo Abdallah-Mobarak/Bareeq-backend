@@ -79,13 +79,32 @@ const buildWhere = (supervisorId, q) => {
   if (q.ids && q.ids.length > 0) where.id = { in: q.ids };
   if (q.companyName) where.companyName = { contains: q.companyName, mode: 'insensitive' };
   if (q.branchName) where.branchName = { contains: q.branchName, mode: 'insensitive' };
-  if (q.brandName) {
-    where.OR = [
-      { branchName: { contains: q.brandName, mode: 'insensitive' } },
-      { categoryName: { contains: q.brandName, mode: 'insensitive' } },
-    ];
-  }
+  if (q.categoryName) where.categoryName = { contains: q.categoryName, mode: 'insensitive' };
   if (q.address) where.address = { contains: q.address, mode: 'insensitive' };
+
+  // OR groups (search / brandName) are stacked under AND so they compose
+  // with each other and with the direct equality filters above.
+  const orGroups = [];
+  if (q.search) {
+    orGroups.push({
+      OR: [
+        { companyName: { contains: q.search, mode: 'insensitive' } },
+        { branchName: { contains: q.search, mode: 'insensitive' } },
+        { categoryName: { contains: q.search, mode: 'insensitive' } },
+        { address: { contains: q.search, mode: 'insensitive' } },
+      ],
+    });
+  }
+  if (q.brandName) {
+    orGroups.push({
+      OR: [
+        { branchName: { contains: q.brandName, mode: 'insensitive' } },
+        { categoryName: { contains: q.brandName, mode: 'insensitive' } },
+      ],
+    });
+  }
+  if (orGroups.length > 0) where.AND = orGroups;
+
   if (q.status) where.status = q.status;
   if (q.documentationStatus) where.documentationStatus = q.documentationStatus;
 

@@ -83,6 +83,7 @@ const buildWhere = (supervisorId, query) => {
     branchNumber,
     city,
     region,
+    address,
     code,
     visitType,
     numberOfVisits,
@@ -108,6 +109,7 @@ const buildWhere = (supervisorId, query) => {
       ...(branchNumber && { branchNumber: { contains: branchNumber } }),
       ...(city && { city: { contains: city, mode: 'insensitive' } }),
       ...(region && { region: { contains: region, mode: 'insensitive' } }),
+      ...(address && { address: { contains: address, mode: 'insensitive' } }),
       ...(code && { code: { contains: code, mode: 'insensitive' } }),
       ...(visitType && { numberOfVisits: { gte: visitType } }),
       ...(numberOfVisits && { numberOfVisits }),
@@ -122,6 +124,7 @@ const buildWhere = (supervisorId, query) => {
       { branchNumber: { contains: q } },
       { city: { contains: q, mode: 'insensitive' } },
       { region: { contains: q, mode: 'insensitive' } },
+      { address: { contains: q, mode: 'insensitive' } },
       { code: { contains: q, mode: 'insensitive' } },
     ];
   }
@@ -386,6 +389,29 @@ const newCounters = () => ({
   undocumented: 0,
 });
 
+/**
+ * Map a company's `perVisitType` map ({ V1: counters, V2: ... }) into the
+ * per-version status rows the "Hourglass" / Performance screen consumes:
+ *   [{ version, done, pending, closed, notDone, documented, undocumented, total }]
+ * Only the versions actually present in the schedule are emitted, sorted V1→Vn.
+ */
+const versionBreakdown = (perVisitType = {}) =>
+  Object.keys(perVisitType)
+    .sort()
+    .map((vt) => {
+      const m = perVisitType[vt];
+      return {
+        version: Number(vt.replace(/^V/i, '')) || vt,
+        done: m.implemented,
+        pending: m.notVisited,
+        closed: m.finalClosed,
+        notDone: m.notImplemented,
+        documented: m.documented,
+        undocumented: m.undocumented,
+        total: m.totalVisits,
+      };
+    });
+
 const tallyInstance = (counters, inst) => {
   counters.totalVisits += 1;
   const key = STATUS_KEY[inst.status];
@@ -526,6 +552,8 @@ const getMyPerformance = async (supervisorId, rawQuery = {}) => {
  *   daysWorked     — distinct UTC calendar days a visit was STARTED
  *   byCompany[].vN — count of that company's visit instances of order N
  *   byCompany[].total — that company's total visit instances
+ *   byCompany[].versions — per-version status breakdown (Hourglass screen):
+ *     [{ version, done, pending, closed, notDone, documented, undocumented, total }]
  */
 const getMyStats = async (supervisorId, rawQuery = {}) => {
   const data = await getMyPerformance(supervisorId, rawQuery);
@@ -544,11 +572,15 @@ const getMyStats = async (supervisorId, rawQuery = {}) => {
     daysWorked: o.daysWorked,
     byCompany: data.companies.map((c) => ({
       companyName: c.companyName,
+      // Plain per-version counts, kept for backward compatibility.
       v1: c.perVisitType.V1?.totalVisits || 0,
       v2: c.perVisitType.V2?.totalVisits || 0,
       v3: c.perVisitType.V3?.totalVisits || 0,
       v4: c.perVisitType.V4?.totalVisits || 0,
       total: c.totals.totalVisits,
+      // Per-version status breakdown for the "Hourglass" screen (V1..V4
+      // tabs). The "All" tab = top-level overview / sum of these versions.
+      versions: versionBreakdown(c.perVisitType),
     })),
   };
 };
