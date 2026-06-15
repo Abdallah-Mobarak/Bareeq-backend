@@ -275,6 +275,38 @@ const assignedOrFail = async (spUserId, bookingId) => {
   return b;
 };
 
+/**
+ * Auto-removal rule for the "Approved Requests" page (FRD §2.3.1.1):
+ * an Implemented (COMPLETED) booking drops off the list once it is
+ * "settled", which is EITHER
+ *   - 1 minute after the SP confirmed "Amount Received" (cash), OR
+ *   - immediately once the customer leaves a rating.
+ *
+ * Crucially we keep a cash booking visible until Amount Received is
+ * confirmed (`cashReceivedAt` set) — otherwise the SP would lose the
+ * button before the platform commission is pulled. The rating shortcut
+ * is therefore also gated on `cashReceivedAt` for cash bookings.
+ *
+ * Returned as a Prisma `NOT` clause so the settled rows are excluded at
+ * read time — no cron needed; the row simply stops coming back. The SP
+ * app refreshes on the REVIEW_RECEIVED push (or after the 1-min window)
+ * and the card disappears.
+ */
+const settledCompletedFilter = () => {
+  const cutoff = new Date(Date.now() - 60 * 1000);
+  return {
+    status: 'COMPLETED',
+    OR: [
+      // Cash: 1 min after Amount Received, or rated once cash is confirmed.
+      { paymentMethod: 'CASH', cashReceivedAt: { lte: cutoff } },
+      { paymentMethod: 'CASH', cashReceivedAt: { not: null }, review: { isNot: null } },
+      // Non-cash (wallet, Sprint 4+): clock starts at implementation.
+      { paymentMethod: { not: 'CASH' }, completedAt: { lte: cutoff } },
+      { paymentMethod: { not: 'CASH' }, review: { isNot: null } },
+    ],
+  };
+};
+
 const listMine = async (spUserId, { page, limit, status, sort }) => {
   await requireVerifiedSp(spUserId);
 
@@ -282,6 +314,9 @@ const listMine = async (spUserId, { page, limit, status, sort }) => {
   const where = {
     assignedSpId: spUserId,
     ...(status && { status }),
+    // Apply the auto-removal only on the default active list. An explicit
+    // ?status=COMPLETED (history view) shows every completed booking.
+    ...(status ? {} : { NOT: [settledCompletedFilter()] }),
   };
   const orderBy = sort === 'oldest' ? { createdAt: 'asc' } : { createdAt: 'desc' };
 

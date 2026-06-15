@@ -443,6 +443,51 @@ ERROR RESPONSE (400) — bad filter:
 
 ---
 
+ENDPOINT NAME:        Filter dropdown options
+METHOD + PATH:        GET /supervisor/my-schedule/filter-options
+AUTH REQUIRED:        yes
+QUERY PARAMS:         none
+PATH PARAMS:          none
+REQUEST BODY:         none
+
+PURPOSE: Feeds the filter screen's dropdowns so the supervisor PICKS a value
+instead of typing it. Each array is the distinct, non-empty, alphabetically
+sorted set of values that actually exist in this supervisor's schedule.
+
+SCOPE: Spans the supervisor's WHOLE schedule — NOT one month. Call it once when
+the filter screen opens; the lists don't change when the user switches the
+`month`/`year` filter on the branches list. Use the returned value verbatim as
+the matching query param on `GET /supervisor/my-schedule/branches` (e.g. pick a
+`cities[]` value → send it as `city=`).
+
+SUCCESS RESPONSE (200):
+```json
+{
+  "success": true,
+  "data": {
+    "companyNames": ["شركة بريق للخدمات"],
+    "branchNames": ["فرع العليا", "فرع الملقا"],
+    "categoryNames": ["صيدليات", "مطاعم"],
+    "branchNumbers": ["B-014", "B-022"],
+    "cities": ["الرياض", "جدة"],
+    "regions": ["منطقة الرياض", "منطقة مكة"],
+    "addresses": ["طريق الملك فهد، حي العليا"]
+  }
+}
+```
+
+FIELD NOTES:
+- Every field is an array of strings; empty array `[]` when the supervisor has
+  no branches (or that column is blank on every branch).
+- Keys map 1:1 to the `branches` filter params: `companyNames`→`companyName`,
+  `branchNames`→`branchName`, `categoryNames`→`categoryName`,
+  `branchNumbers`→`branchNumber`, `cities`→`city`, `regions`→`region`,
+  `addresses`→`address`.
+- The branches filter still matches case-insensitively and by substring, so
+  sending the exact picked value always matches.
+
+---
+
 ENDPOINT NAME:        Branch detail (full visit timeline)
 METHOD + PATH:        GET /supervisor/branches/:id
 AUTH REQUIRED:        yes
@@ -1289,32 +1334,33 @@ ERROR RESPONSE (401): standard.
 | 4 | GET | /auth/me | yes |
 | 5 | GET | /supervisor/my-schedule | yes |
 | 6 | GET | /supervisor/my-schedule/branches | yes |
-| 7 | GET | /supervisor/branches/:id | yes |
-| 8 | GET | /visit-instances/:id | yes |
-| 9 | POST | /visit-instances/:id/start | yes |
-| 10 | PATCH | /visit-instances/:id/tasks/:taskCheckId | yes |
-| 11 | POST | /visit-instances/:id/photos | yes |
-| 12 | DELETE | /visit-instances/:id/photos/:photoId | yes |
-| 13 | POST | /visit-instances/:id/complete | yes |
-| 14 | POST | /visit-instances/:id/not-implemented | yes |
-| 15 | POST | /visit-instances/:id/final-closed | yes |
-| 16 | POST | /visit-instances/:id/document/send-otp | yes |
-| 17 | POST | /visit-instances/:id/document/verify-otp | yes |
-| 18 | GET | /public/document/:token | no |
-| 19 | POST | /public/document/:token/submit | no |
-| 20 | GET | /public/document/:token/pdf | no |
-| 21 | GET | /supervisor/additional-tasks | yes |
-| 22 | GET | /supervisor/additional-tasks/:id | yes |
-| 23 | GET | /supervisor/additional-tasks/export.xlsx | yes |
-| 24 | GET | /supervisor/additional-tasks/export.pdf | yes |
-| 25 | POST | /supervisor/additional-tasks/:id/start | yes |
-| 26 | POST | /supervisor/additional-tasks/:id/complete | yes |
-| 27 | POST | /supervisor/additional-tasks/:id/final-closed | yes |
-| 28 | POST | /supervisor/additional-tasks/:id/not-implemented | yes |
-| 29 | GET | /notifications | yes |
-| 30 | GET | /notifications/unread-count | yes |
-| 31 | PATCH | /notifications/:id/read | yes |
-| 32 | PATCH | /notifications/read-all | yes |
+| 7 | GET | /supervisor/my-schedule/filter-options | yes |
+| 8 | GET | /supervisor/branches/:id | yes |
+| 9 | GET | /visit-instances/:id | yes |
+| 10 | POST | /visit-instances/:id/start | yes |
+| 11 | PATCH | /visit-instances/:id/tasks/:taskCheckId | yes |
+| 12 | POST | /visit-instances/:id/photos | yes |
+| 13 | DELETE | /visit-instances/:id/photos/:photoId | yes |
+| 14 | POST | /visit-instances/:id/complete | yes |
+| 15 | POST | /visit-instances/:id/not-implemented | yes |
+| 16 | POST | /visit-instances/:id/final-closed | yes |
+| 17 | POST | /visit-instances/:id/document/send-otp | yes |
+| 18 | POST | /visit-instances/:id/document/verify-otp | yes |
+| 19 | GET | /public/document/:token | no |
+| 20 | POST | /public/document/:token/submit | no |
+| 21 | GET | /public/document/:token/pdf | no |
+| 22 | GET | /supervisor/additional-tasks | yes |
+| 23 | GET | /supervisor/additional-tasks/:id | yes |
+| 24 | GET | /supervisor/additional-tasks/export.xlsx | yes |
+| 25 | GET | /supervisor/additional-tasks/export.pdf | yes |
+| 26 | POST | /supervisor/additional-tasks/:id/start | yes |
+| 27 | POST | /supervisor/additional-tasks/:id/complete | yes |
+| 28 | POST | /supervisor/additional-tasks/:id/final-closed | yes |
+| 29 | POST | /supervisor/additional-tasks/:id/not-implemented | yes |
+| 30 | GET | /notifications | yes |
+| 31 | GET | /notifications/unread-count | yes |
+| 32 | PATCH | /notifications/:id/read | yes |
+| 33 | PATCH | /notifications/read-all | yes |
 
 ---
 

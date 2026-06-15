@@ -65,7 +65,25 @@ const visitPhotoUpload = multer({
   },
 }).array('photos', 4);
 
+/**
+ * Single-image uploader for dashboard assets (service / category images,
+ * Marketplace §3.4). Same mime/size policy as visit photos but a single
+ * file under the `image` field. The service layer persists the buffer
+ * and returns a public URL.
+ */
+const imageUpload = multer({
+  storage: memoryStorage,
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => {
+    if (!PHOTO_MIMES.has(file.mimetype)) {
+      return cb(new ApiError(400, 'Only JPEG, PNG, or WebP images are accepted'));
+    }
+    cb(null, true);
+  },
+}).single('image');
+
 module.exports = {
   excelUpload: wrap(excelUpload),
   visitPhotoUpload: wrap(visitPhotoUpload),
+  imageUpload: wrap(imageUpload),
 };

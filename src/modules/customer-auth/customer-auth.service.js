@@ -2,7 +2,7 @@ const { prisma } = require('../../infrastructure/database/prisma');
 const { ApiError } = require('../../utils/ApiError');
 const password = require('../../utils/password');
 const otp = require('../../utils/otp');
-const { sendEmail } = require('../../utils/mailer');
+const { sendEmailBestEffort } = require('../../utils/mailer');
 const { signupOtpEmail, passwordResetOtpEmail } = require('../../utils/email-templates');
 const { logger } = require('../../utils/logger');
 const { config } = require('../../config/env');
@@ -73,7 +73,7 @@ const requestSignup = async ({ email, password: plainPassword, nameAr, nameEn, p
 
   const { code, expiresAt } = await otp.issueCode(email, 'CUSTOMER_SIGNUP');
 
-  await sendEmail({
+  await sendEmailBestEffort({
     to: email,
     ...signupOtpEmail({
       nameAr,
@@ -185,7 +185,7 @@ const requestPasswordReset = async ({ email }) => {
   if (user) {
     const { code } = await otp.issueCode(email, 'CUSTOMER_PASSWORD_RESET');
     issuedCode = code;
-    await sendEmail({
+    await sendEmailBestEffort({
       to: email,
       ...passwordResetOtpEmail({
         nameAr: user.nameAr,

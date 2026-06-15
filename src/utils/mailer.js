@@ -101,4 +101,30 @@ const sendEmail = async ({ to, subject, html, text, body }) => {
   return result;
 };
 
-module.exports = { sendEmail };
+/**
+ * Best-effort variant for flows where the OTP/code is ALSO returned in the
+ * API response during development (SP/Customer signup + password reset).
+ *
+ * In production this is a straight pass-through: a failed send still throws,
+ * because there the email is the ONLY delivery channel and a silent drop
+ * would lock the user out. In dev/test, where SMTP is often unconfigured (so
+ * the mailer falls back to Ethereal and a missing internet connection makes
+ * createTestAccount() throw), we log and continue instead of 500-ing the
+ * whole request — the caller still returns the code in its response.
+ */
+const sendEmailBestEffort = async (message) => {
+  try {
+    return await sendEmail(message);
+  } catch (err) {
+    if (config.isProduction) {
+      throw err;
+    }
+    logger.error(
+      { err: err.message, to: message.to, subject: message.subject },
+      'Email send failed in non-production — continuing; the code is returned in the API response',
+    );
+    return null;
+  }
+};
+
+module.exports = { sendEmail, sendEmailBestEffort };

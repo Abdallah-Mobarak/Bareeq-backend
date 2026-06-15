@@ -28,6 +28,11 @@ enum SystemRole {
   ACCOUNTANT_MANAGER
   CUSTOMER
   SERVICE_PROVIDER
+  /// Dedicated operator of the Services Marketplace dashboard
+  /// (Marketplace §3). Isolated from the Management System: this role
+  /// only passes requireRole on the marketplace admin modules, never on
+  /// the Management System's ADMIN-gated routes.
+  MARKETPLACE_ADMIN
 }
 
 /// KYC / verification state for a ServiceProvider account.

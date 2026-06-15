@@ -39,6 +39,13 @@ router.get(
 );
 router.get('/stats', validate(statsQuerySchema, 'query'), controller.stats);
 
+/**
+ * Distinct filter values for the mobile filter screen's dropdowns
+ * (FRD §1.2.3). Spans the supervisor's whole schedule, not one month, so a
+ * picker never goes empty when the month filter changes. No query params.
+ */
+router.get('/my-schedule/filter-options', controller.filterOptions);
+
 router.get(
   '/my-schedule/branches',
   validate(listMyBranchesQuerySchema, 'query'),

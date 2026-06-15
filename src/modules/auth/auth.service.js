@@ -126,6 +126,7 @@ const login = async ({ identifier, password: plainPassword, deviceInfo, clientTy
    *   ACCOUNTANT_MANAGER→ web only          (FRD §2 (AM) — no mobile mentioned, default to web)
    *   MANAGER           → web only          (FRD §3   "Web Application Functionality for Managers")
    *   ADMIN             → web only          (FRD §4   "Web Application Functionality for Admins")
+   *   MARKETPLACE_ADMIN → web only          (Marketplace §3 "Admin Dashboard Web Application")
    *   CUSTOMER          → mobile only       (Marketplace §1 "Customer Mobile Application")
    *   SERVICE_PROVIDER  → mobile only       (Marketplace §2 "Service Provider Mobile Application")
    *
@@ -136,6 +137,7 @@ const login = async ({ identifier, password: plainPassword, deviceInfo, clientTy
   const ROLE_CLIENT_MAP = {
     SUPERVISOR: ['mobile'],
     ADMIN: ['web'],
+    MARKETPLACE_ADMIN: ['web'],
     MANAGER: ['web'],
     COMPANY_USER: ['web', 'mobile'],
     ACCOUNTANT_MANAGER: ['web'],

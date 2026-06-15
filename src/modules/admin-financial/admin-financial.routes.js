@@ -3,14 +3,13 @@ const { Router } = require('express');
 const validate = require('../../middlewares/validate');
 const requireAuth = require('../../middlewares/requireAuth');
 const requireRole = require('../../middlewares/requireRole');
-const controller = require('./admin-reviews.controller');
-const { listQuerySchema, idParamSchema } = require('./admin-reviews.validation');
+const controller = require('./admin-financial.controller');
+const { summaryQuerySchema } = require('./admin-financial.validation');
 
 const router = Router();
 
 router.use(requireAuth, requireRole('ADMIN', 'MARKETPLACE_ADMIN'));
 
-router.get('/', validate(listQuerySchema, 'query'), controller.list);
-router.get('/:id', validate(idParamSchema, 'params'), controller.getOne);
+router.get('/summary', validate(summaryQuerySchema, 'query'), controller.getSummary);
 
 module.exports = router;

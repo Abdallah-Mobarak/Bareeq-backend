@@ -12,6 +12,7 @@
     "prisma:studio": "prisma studio",
     "prisma:reset": "prisma migrate reset",
     "seed:admin": "node scripts/seed-admin.js",
+    "seed:marketplace-admin": "node scripts/seed-marketplace-admin.js",
     "seed:permissions": "node scripts/seed-permissions.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

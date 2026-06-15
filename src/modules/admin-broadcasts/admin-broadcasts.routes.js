@@ -13,7 +13,7 @@ const {
 
 const router = Router();
 
-router.use(requireAuth, requireRole('ADMIN'));
+router.use(requireAuth, requireRole('ADMIN', 'MARKETPLACE_ADMIN'));
 
 router.post('/', validate(sendBroadcastSchema), controller.send);
 router.get('/', validate(listBroadcastsQuerySchema, 'query'), controller.list);

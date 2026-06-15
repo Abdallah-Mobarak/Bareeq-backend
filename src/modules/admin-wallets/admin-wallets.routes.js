@@ -13,7 +13,7 @@ const {
 
 const router = Router();
 
-router.use(requireAuth, requireRole('ADMIN'));
+router.use(requireAuth, requireRole('ADMIN', 'MARKETPLACE_ADMIN'));
 
 router.get('/:userId', validate(userIdParamSchema, 'params'), controller.getWallet);
 router.get(

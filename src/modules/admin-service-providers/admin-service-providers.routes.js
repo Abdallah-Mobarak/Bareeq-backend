@@ -13,7 +13,7 @@ const {
 
 const router = Router();
 
-router.use(requireAuth, requireRole('ADMIN'));
+router.use(requireAuth, requireRole('ADMIN', 'MARKETPLACE_ADMIN'));
 
 router.get('/', validate(listQuerySchema, 'query'), controller.list);
 router.get('/:id', validate(idParamSchema, 'params'), controller.getOne);

@@ -51,12 +51,23 @@ app.use(express.urlencoded({ extended: true }));
 // 5: Request logging
 app.use(requestLogger);
 
-// 6a-pre: Static serving for visit photos. Stored under <repo>/uploads;
-//         exposed at /uploads/* with a long cache so the mobile app can
-//         re-display photos cheaply. Helmet's CSP doesn't apply (we
-//         already disabled it for static assets implicitly).
+// 6a-pre: Static serving for uploaded assets (visit photos, marketplace
+//         images). Stored under <repo>/uploads; exposed at /uploads/* with
+//         a long cache so clients can re-display cheaply.
+//
+//         Helmet's default sets `Cross-Origin-Resource-Policy: same-origin`,
+//         which blocks browsers from embedding these files in <img> tags
+//         from a different origin (e.g. the dashboard on localhost:4200)
+//         even though CORS allows the fetch. Override CORP to `cross-origin`
+//         for static assets only — they're public, non-credentialed files
+//         meant to be embedded anywhere. The strict default still applies
+//         to every API response.
 app.use(
   '/uploads',
+  (req, res, next) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
+  },
   express.static(path.join(__dirname, '..', 'uploads'), {
     maxAge: '7d',
     etag: true,

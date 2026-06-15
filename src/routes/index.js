@@ -57,6 +57,9 @@ const adminDisputesRoutes = require('../modules/admin-disputes/admin-disputes.ro
 const adminSystemSettingsRoutes = require('../modules/admin-system-settings/admin-system-settings.routes');
 const systemSettingsRoutes = require('../modules/system-settings/system-settings.routes');
 const adminLookupsRoutes = require('../modules/admin-lookups/admin-lookups.routes');
+const adminUploadsRoutes = require('../modules/admin-uploads/admin-uploads.routes');
+const adminFinancialRoutes = require('../modules/admin-financial/admin-financial.routes');
+const adminUsersRoutes = require('../modules/admin-users/admin-users.routes');
 const visitInstancesRoutes = require('../modules/visit-instances/visit-instances.routes');
 const {
   supervisorRouter: visitDocSupervisorRoutes,
@@ -129,6 +132,9 @@ router.use('/admin/disputes', adminDisputesRoutes);
 router.use('/admin/system-settings', adminSystemSettingsRoutes);
 router.use('/settings', systemSettingsRoutes);
 router.use('/admin/lookups', adminLookupsRoutes);
+router.use('/admin/uploads', adminUploadsRoutes);
+router.use('/admin/financial', adminFinancialRoutes);
+router.use('/admin/users', adminUsersRoutes);
 router.use('/visit-instances', visitInstancesRoutes);
 router.use('/visit-instances', visitDocSupervisorRoutes);
 router.use('/public/document', visitDocPublicRoutes);

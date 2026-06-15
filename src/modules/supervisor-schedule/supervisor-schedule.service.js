@@ -213,6 +213,63 @@ const listMyBranches = async (supervisorId, rawQuery) => {
 };
 
 /**
+ * GET /supervisor/my-schedule/filter-options
+ *
+ * Feeds the mobile filter screen's dropdowns (Company / Branch / Category /
+ * Branch Number / City / Region / Address). Instead of the supervisor typing
+ * a value by hand, the app loads the distinct values that actually exist in
+ * their schedule and lets them pick one.
+ *
+ * Deliberately NOT scoped by year/month: the dropdowns always offer every
+ * value across the supervisor's whole schedule, so switching the month filter
+ * never empties a picker. The `branches` list endpoint stays the one that
+ * narrows results by month.
+ *
+ * One pass over the supervisor's RegionScheduling rows; we dedupe each field
+ * in JS (the row count per supervisor is small) and return sorted, non-empty
+ * value lists.
+ */
+const sortedDistinct = (values) =>
+  [...new Set(values.filter((v) => v !== null && v !== undefined && v !== ''))].sort(
+    (a, b) => String(a).localeCompare(String(b)),
+  );
+
+const getMyFilterOptions = async (supervisorId) => {
+  const rows = await prisma.scheduledVisit.findMany({
+    where: {
+      deletedAt: null,
+      monthlySchedule: { supervisorId, deletedAt: null },
+      regionScheduling: { deletedAt: null },
+    },
+    select: {
+      regionScheduling: {
+        select: {
+          companyName: true,
+          branchName: true,
+          categoryName: true,
+          branchNumber: true,
+          city: true,
+          region: true,
+          address: true,
+        },
+      },
+    },
+  });
+
+  const r = rows.map((sv) => sv.regionScheduling).filter(Boolean);
+
+  return {
+    companyNames: sortedDistinct(r.map((x) => x.companyName)),
+    branchNames: sortedDistinct(r.map((x) => x.branchName)),
+    categoryNames: sortedDistinct(r.map((x) => x.categoryName)),
+    branchNumbers: sortedDistinct(r.map((x) => x.branchNumber)),
+    cities: sortedDistinct(r.map((x) => x.city)),
+    regions: sortedDistinct(r.map((x) => x.region)),
+    addresses: sortedDistinct(r.map((x) => x.address)),
+  };
+};
+
+/**
  * GET /supervisor/my-schedule
  * Lightweight overview: month + total branches assigned. FRD §1.2.1
  * "Display a total number of branches he will visit during this month."
@@ -617,6 +674,7 @@ const buildPerformanceFlatRows = async (supervisorId, rawQuery = {}) => {
 module.exports = {
   myScheduleSummary,
   listMyBranches,
+  getMyFilterOptions,
   getMyBranchDetail,
   getMyPerformance,
   getMyStats,

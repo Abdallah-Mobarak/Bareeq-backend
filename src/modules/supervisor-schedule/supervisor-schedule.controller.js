@@ -38,6 +38,16 @@ const branchDetail = asyncHandler(async (req, res) => {
 });
 
 /**
+ * GET /supervisor/my-schedule/filter-options — distinct values for the mobile
+ * filter dropdowns (Company / Branch / Category / Branch Number / City /
+ * Region / Address). Always spans the supervisor's whole schedule.
+ */
+const filterOptions = asyncHandler(async (req, res) => {
+  const data = await service.getMyFilterOptions(req.user.id);
+  res.json({ success: true, data });
+});
+
+/**
  * GET /supervisor/not-implemented-reasons — the admin-managed reason list,
  * exposed read-only to supervisors for the "Not Implemented" picker
  * (FRD §1.2.3.1 / §1.4.4.1). Admin adds reasons via /reasons; supervisors
@@ -90,6 +100,7 @@ module.exports = {
   summary,
   listBranches,
   branchDetail,
+  filterOptions,
   notImplementedReasons,
   stats,
   exportStatsXlsx,
