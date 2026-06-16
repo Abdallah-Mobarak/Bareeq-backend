@@ -28,8 +28,10 @@ const TTL_MINUTES = 15;
 const MAX_ATTEMPTS = 5;
 const CODE_LENGTH = 6;
 
-const generateCode = () =>
-  String(crypto.randomInt(0, 10 ** CODE_LENGTH)).padStart(CODE_LENGTH, '0');
+// Length is a per-call parameter (default 6) so Customer stays 6 digits while
+// Service Provider uses 4 — passed explicitly by each caller's issueCode.
+const generateCode = (length = CODE_LENGTH) =>
+  String(crypto.randomInt(0, 10 ** length)).padStart(length, '0');
 
 /**
  * Issue a fresh one-time code for `identifier` + `purpose`.
@@ -49,8 +51,8 @@ const generateCode = () =>
  * @param {'CUSTOMER_SIGNUP'|'SERVICE_PROVIDER_SIGNUP'|'CUSTOMER_PASSWORD_RESET'|'SERVICE_PROVIDER_PASSWORD_RESET'} purpose
  * @returns {Promise<{ code: string, expiresAt: Date }>}
  */
-const issueCode = async (identifier, purpose) => {
-  const code = generateCode();
+const issueCode = async (identifier, purpose, length = CODE_LENGTH) => {
+  const code = generateCode(length);
   const codeHash = await password.hash(code);
   const expiresAt = new Date(Date.now() + TTL_MINUTES * 60 * 1000);
 

@@ -29,6 +29,17 @@ const config = {
   port: parseInt(optional('PORT', '3000'), 10),
   apiPrefix: optional('API_PREFIX', '/api/v1'),
 
+  // TEMPORARY test toggle. When true, OTP flows behave like dev even in
+  // production: a failed email is non-fatal AND the OTP is echoed in the
+  // API response so the app can read it without a real mailbox. Turn OFF
+  // (remove / set false) before real launch.
+  otpTestMode: optional('OTP_TEST_MODE', 'false') === 'true',
+  // Master code that always passes OTP verification WHILE otpTestMode is on,
+  // so a handed-out APK build can clear the OTP screen with no real mailbox.
+  // 4 digits to match the Service Provider OTP format.
+  // SECURITY: only honoured when OTP_TEST_MODE=true.
+  otpTestCode: optional('OTP_TEST_CODE', '0000'),
+
   database: {
     url: required('DATABASE_URL'),
   },

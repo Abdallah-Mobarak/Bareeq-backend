@@ -24,14 +24,29 @@ const { notify } = require('../notifications/notifications.service');
  */
 
 const includeDevOtp = (payload, code) =>
-  config.nodeEnv === 'production'
+  config.isProduction && !config.otpTestMode
     ? payload
     : {
         ...payload,
         otp: code,
         devNote:
-          'OTP is returned here ONLY in non-production. Replace mailer mock with a real provider before launch.',
+          'OTP is returned here ONLY in non-production or while OTP_TEST_MODE=true. Replace mailer mock with a real provider before launch.',
       };
+
+/**
+ * Verify the submitted OTP — but WHILE OTP_TEST_MODE is on, a fixed master
+ * code (config.otpTestCode) is accepted without a real code being issued or
+ * emailed. Lets a handed-out APK test build clear the OTP screen with no
+ * mailbox. SECURITY: a universal bypass — gated behind OTP_TEST_MODE and
+ * MUST be off (flag removed) before launch.
+ */
+const verifyOtpOrTestBypass = async (email, purpose, submittedOtp) => {
+  if (config.otpTestMode && submittedOtp === config.otpTestCode) {
+    logger.warn({ email, purpose }, 'OTP_TEST_MODE master code accepted — disable before launch');
+    return;
+  }
+  await otp.verifyCode(email, purpose, submittedOtp);
+};
 
 const findUserByEmail = (email) => prisma.user.findFirst({ where: { email, deletedAt: null } });
 
@@ -88,7 +103,7 @@ const requestSignup = async ({
     }
   }
 
-  const { code, expiresAt } = await otp.issueCode(email, 'SERVICE_PROVIDER_SIGNUP');
+  const { code, expiresAt } = await otp.issueCode(email, 'SERVICE_PROVIDER_SIGNUP', 4);
 
   await sendEmailBestEffort({
     to: email,
@@ -120,7 +135,7 @@ const verifySignup = async ({
   serviceCategoryId,
   otp: submittedOtp,
 }) => {
-  await otp.verifyCode(email, 'SERVICE_PROVIDER_SIGNUP', submittedOtp);
+  await verifyOtpOrTestBypass(email, 'SERVICE_PROVIDER_SIGNUP', submittedOtp);
 
   const existing = await findUserByEmail(email);
   if (existing) {
@@ -194,7 +209,7 @@ const requestPasswordReset = async ({ email }) => {
 
   let issuedCode = null;
   if (user) {
-    const { code } = await otp.issueCode(email, 'SERVICE_PROVIDER_PASSWORD_RESET');
+    const { code } = await otp.issueCode(email, 'SERVICE_PROVIDER_PASSWORD_RESET', 4);
     issuedCode = code;
     await sendEmailBestEffort({
       to: email,
@@ -216,7 +231,7 @@ const requestPasswordReset = async ({ email }) => {
 };
 
 const confirmPasswordReset = async ({ email, otp: submittedOtp, newPassword }) => {
-  await otp.verifyCode(email, 'SERVICE_PROVIDER_PASSWORD_RESET', submittedOtp);
+  await verifyOtpOrTestBypass(email, 'SERVICE_PROVIDER_PASSWORD_RESET', submittedOtp);
 
   const user = await prisma.user.findFirst({
     where: { email, role: 'SERVICE_PROVIDER', deletedAt: null },

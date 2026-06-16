@@ -20,9 +20,11 @@ const nameEnField = Joi.string().trim().min(2).max(100).optional().allow(null, '
 const bioField = Joi.string().trim().max(2000).optional().allow(null, '');
 // "Service Type" the SP registers for (FRD §2.1) — a ServiceCategory id.
 const serviceCategoryIdField = Joi.string().trim().min(1).max(40).required();
+// Service Provider OTP is 4 digits (Customer stays 6). The mobile app sends a
+// 4-character code, so anything else must be rejected.
 const otpField = Joi.string()
-  .length(6)
-  .pattern(/^\d{6}$/)
+  .length(4)
+  .pattern(/^\d{4}$/)
   .required();
 
 const signupRequestSchema = Joi.object({

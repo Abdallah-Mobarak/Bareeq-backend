@@ -116,7 +116,10 @@ const sendEmailBestEffort = async (message) => {
   try {
     return await sendEmail(message);
   } catch (err) {
-    if (config.isProduction) {
+    // OTP_TEST_MODE keeps the request alive even in production: the code is
+    // still returned in the API response, so a missing/broken SMTP during the
+    // test phase doesn't 500 the signup.
+    if (config.isProduction && !config.otpTestMode) {
       throw err;
     }
     logger.error(
