@@ -42,6 +42,16 @@ router.get(
   controller.dashboard,
 );
 
+/**
+ * Same data as /dashboard, as a two-sheet .xlsx (Summary + Branches).
+ * Mounted as a sibling literal path so there's no :id collision to guard.
+ */
+router.get(
+  '/dashboard/export.xlsx',
+  validate(dashboardQuerySchema, 'query'),
+  controller.exportDashboardXlsx,
+);
+
 router.get(
   '/branches',
   validate(listBranchesQuerySchema, 'query'),

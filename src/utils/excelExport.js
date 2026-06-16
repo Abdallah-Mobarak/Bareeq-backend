@@ -14,11 +14,12 @@ const ExcelJS = require('exceljs');
  * Bool values render as "Yes" / "No"; null / undefined as "—" — keeps
  * the output readable when opened in Excel directly.
  */
-const buildExcel = async ({ sheetName, columns, rows }) => {
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'Bareeq';
-  workbook.created = new Date();
-
+/**
+ * Fill one worksheet from a { sheetName, columns, rows } spec. Shared by
+ * the single-sheet `buildExcel` and the multi-sheet `buildExcelWorkbook`
+ * so both render cells identically (bool → Yes/No, null → "—").
+ */
+const fillSheet = (workbook, { sheetName, columns, rows }) => {
   const sheet = workbook.addWorksheet(sheetName || 'Sheet1');
 
   sheet.columns = columns.map((c) => ({
@@ -46,6 +47,32 @@ const buildExcel = async ({ sheetName, columns, rows }) => {
     sheet.addRow(row);
   }
 
+  return sheet;
+};
+
+const buildExcel = async ({ sheetName, columns, rows }) => {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Bareeq';
+  workbook.created = new Date();
+
+  fillSheet(workbook, { sheetName, columns, rows });
+
+  return workbook.xlsx.writeBuffer();
+};
+
+/**
+ * Multi-sheet variant — each entry in `sheets` is the same
+ * { sheetName, columns, rows } spec `buildExcel` takes, rendered as its
+ * own tab in one workbook. Used by the company dashboard export so the
+ * summary cards and the branches list land on separate tabs.
+ */
+const buildExcelWorkbook = async ({ sheets }) => {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Bareeq';
+  workbook.created = new Date();
+
+  for (const spec of sheets) fillSheet(workbook, spec);
+
   return workbook.xlsx.writeBuffer();
 };
 
@@ -67,4 +94,4 @@ const xlsxResponse = (res, buffer, filename) => {
 
 const todayStamp = () => new Date().toISOString().slice(0, 10);
 
-module.exports = { buildExcel, xlsxResponse, todayStamp };
+module.exports = { buildExcel, buildExcelWorkbook, xlsxResponse, todayStamp };

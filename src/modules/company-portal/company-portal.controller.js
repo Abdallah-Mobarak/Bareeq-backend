@@ -1,5 +1,5 @@
 const { asyncHandler } = require('../../utils/asyncHandler');
-const { buildExcel, xlsxResponse, todayStamp } = require('../../utils/excelExport');
+const { buildExcel, buildExcelWorkbook, xlsxResponse, todayStamp } = require('../../utils/excelExport');
 const { buildPdf, pdfResponse } = require('../../utils/pdfExport');
 const service = require('./company-portal.service');
 
@@ -20,6 +20,27 @@ const BRANCHES_EXPORT_COLUMNS = [
   { header: 'Code', key: 'code', width: 14 },
   { header: 'Visit Types', key: 'visitTypes', width: 18 },
   { header: 'Statuses', key: 'statuses', width: 40 },
+];
+
+/**
+ * Dashboard "Branches" sheet — one row per branch as shown on the home
+ * screen, with a flat "V1: STATUS, V2: STATUS" summary in a single cell.
+ */
+const DASHBOARD_BRANCHES_COLUMNS = [
+  { header: 'Brand', key: 'brandName', width: 32 },
+  { header: 'City', key: 'city', width: 18 },
+  { header: 'Region', key: 'region', width: 18 },
+  { header: 'Address', key: 'address', width: 28 },
+  { header: '#Visits', key: 'numberOfVisits', width: 10 },
+  { header: 'First Visit', key: 'firstVisitDate', width: 14 },
+  { header: 'Has Action', key: 'hasAction', width: 12 },
+  { header: 'Visit Statuses', key: 'visitStatuses', width: 44 },
+];
+
+/** Dashboard "Summary" sheet — the home-screen cards as a key/value list. */
+const DASHBOARD_SUMMARY_COLUMNS = [
+  { header: 'Metric', key: 'metric', width: 28 },
+  { header: 'Value', key: 'value', width: 16 },
 ];
 
 const MONTHLY_REPORT_EXPORT_COLUMNS = [
@@ -79,6 +100,56 @@ const myProfile = asyncHandler(async (req, res) => {
 const dashboard = asyncHandler(async (req, res) => {
   const data = await service.getMyDashboardStats(req.user.id, req.validatedQuery);
   res.json({ success: true, data });
+});
+
+/**
+ * GET /company/dashboard/export.xlsx
+ * Same data, query params and scoping as GET /company/dashboard, rendered
+ * as a two-sheet workbook: "Summary" (the home-screen cards) and
+ * "Branches" (the per-branch breakdown). Mirrors what the dashboard shows
+ * so the user exports exactly what's on screen, honouring ?dateFrom/?dateTo.
+ */
+const exportDashboardXlsx = asyncHandler(async (req, res) => {
+  const data = await service.getMyDashboardStats(req.user.id, req.validatedQuery || {});
+
+  const summaryRows = [
+    { metric: 'Total Branches', value: data.totalBranches },
+    { metric: 'Total Visits', value: data.totalVisits },
+    { metric: 'Date From', value: data.dateRange.from },
+    { metric: 'Date To', value: data.dateRange.to },
+    { metric: 'Visits — Remaining', value: data.visitsByStatus.REMAINING },
+    { metric: 'Visits — Underway', value: data.visitsByStatus.UNDERWAY },
+    { metric: 'Visits — Implemented', value: data.visitsByStatus.IMPLEMENTED },
+    { metric: 'Visits — Not Implemented', value: data.visitsByStatus.NOT_IMPLEMENTED },
+    { metric: 'Visits — Final Closed', value: data.visitsByStatus.FINAL_CLOSED },
+    { metric: 'Documentation — Documented', value: data.documentation.DOCUMENTED },
+    { metric: 'Documentation — Undocumented', value: data.documentation.UNDOCUMENTED },
+    { metric: 'Branches — With Action', value: data.branchesByAction.withAction },
+    { metric: 'Branches — No Action', value: data.branchesByAction.noAction },
+  ];
+
+  const branchRows = data.branches.map((b) => ({
+    brandName: b.brandName,
+    city: b.city,
+    region: b.region,
+    address: b.address,
+    numberOfVisits: b.numberOfVisits,
+    firstVisitDate: b.firstVisitDate
+      ? new Date(b.firstVisitDate).toISOString().slice(0, 10)
+      : null,
+    hasAction: b.hasAction,
+    visitStatuses: (b.visits || [])
+      .map((v) => `V${v.visitOrder}: ${v.status}`)
+      .join(', '),
+  }));
+
+  const buffer = await buildExcelWorkbook({
+    sheets: [
+      { sheetName: 'Summary', columns: DASHBOARD_SUMMARY_COLUMNS, rows: summaryRows },
+      { sheetName: 'Branches', columns: DASHBOARD_BRANCHES_COLUMNS, rows: branchRows },
+    ],
+  });
+  xlsxResponse(res, buffer, `company-dashboard-${todayStamp()}.xlsx`);
 });
 
 /**
@@ -275,6 +346,7 @@ const listMyMessages = asyncHandler(async (req, res) => {
 module.exports = {
   myProfile,
   dashboard,
+  exportDashboardXlsx,
   listBranches,
   listAllBranches,
   allBranchDetail,
