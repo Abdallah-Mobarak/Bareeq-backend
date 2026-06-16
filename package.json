@@ -14,6 +14,8 @@
     "seed:admin": "node scripts/seed-admin.js",
     "seed:marketplace-admin": "node scripts/seed-marketplace-admin.js",
     "seed:permissions": "node scripts/seed-permissions.js",
+    "seed:locations": "node scripts/seed-locations.js",
+    "seed:categories": "node scripts/seed-categories.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"src/**/*.js\" \"prisma/**/*.prisma\" \"*.{json,md,js}\"",
