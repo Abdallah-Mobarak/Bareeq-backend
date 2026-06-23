@@ -20,6 +20,14 @@ router.get(
   controller.summary,
 );
 
+// /export.xlsx reuses the list filter query; pagination is ignored —
+// the controller pulls everything that matches.
+router.get(
+  '/export.xlsx',
+  validate(listScheduledVisitsQuerySchema, 'query'),
+  controller.exportExcel,
+);
+
 router.get(
   '/',
   validate(listScheduledVisitsQuerySchema, 'query'),
