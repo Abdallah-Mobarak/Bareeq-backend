@@ -3,6 +3,8 @@ const crypto = require('node:crypto');
 const { prisma } = require('../infrastructure/database/prisma');
 const { ApiError } = require('./ApiError');
 const password = require('./password');
+const { config } = require('../config/env');
+const { logger } = require('./logger');
 
 /**
  * Identifier-bound one-time codes (Marketplace §1.1, §2.1).
@@ -26,10 +28,10 @@ const password = require('./password');
 
 const TTL_MINUTES = 15;
 const MAX_ATTEMPTS = 5;
-const CODE_LENGTH = 6;
+const CODE_LENGTH = 4;
 
-// Length is a per-call parameter (default 6) so Customer stays 6 digits while
-// Service Provider uses 4 — passed explicitly by each caller's issueCode.
+// Length is a per-call parameter (default 4). Every auth OTP in the system
+// is 4 digits; callers may still override the length explicitly if needed.
 const generateCode = (length = CODE_LENGTH) =>
   String(crypto.randomInt(0, 10 ** length)).padStart(length, '0');
 
@@ -90,6 +92,16 @@ const issueCode = async (identifier, purpose, length = CODE_LENGTH) => {
  * @returns {Promise<void>} resolves on success; throws ApiError on failure
  */
 const verifyCode = async (identifier, purpose, submitted) => {
+  // OTP_TEST_MODE master-code bypass — accept a fixed code (config.otpTestCode,
+  // default 0000) WITHOUT a real code being issued or emailed, so a handed-out
+  // test build can clear ANY OTP screen with no mailbox. Centralised here so
+  // every flow that calls verifyCode (Customer + SP signup/reset) inherits it.
+  // SECURITY: gated behind OTP_TEST_MODE; turn the flag OFF before launch.
+  if (config.otpTestMode && submitted === config.otpTestCode) {
+    logger.warn({ identifier, purpose }, 'OTP_TEST_MODE master code accepted — disable before launch');
+    return;
+  }
+
   const row = await prisma.oneTimeCode.findFirst({
     where: { identifier, purpose, consumedAt: null },
     orderBy: { createdAt: 'desc' },

@@ -1487,6 +1487,12 @@ model Booking {
   locationAddress String?  @map("location_address")
   scheduledDate   DateTime @map("scheduled_date")
 
+  /// Relative public paths (/uploads/bookings/...) of photos the customer
+  /// attached to the request (Marketplace §1.3). Uploaded first via
+  /// POST /customer/uploads, then their urls are sent here on create.
+  /// Stored relative so any API host can serve them. Empty when none.
+  photoUrls String[] @map("photo_urls")
+
   // Pricing — locked at creation
   totalCost Decimal @map("total_cost") @db.Decimal(12, 2)
 

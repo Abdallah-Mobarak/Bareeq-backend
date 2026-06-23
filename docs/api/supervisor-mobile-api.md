@@ -901,7 +901,7 @@ SUCCESS RESPONSE (200):
 ```
 
 FIELD NOTES:
-- `otp` (6-digit string) and `devNote` exist ONLY in MVP — they will disappear
+- `otp` (4-digit string) and `devNote` exist ONLY in MVP — they will disappear
   once a real SMS provider is wired. Do NOT build UI that depends on `otp` being
   present in production.
 - Only allowed when the visit is `IMPLEMENTED` and not yet `DOCUMENTED`.
@@ -919,9 +919,9 @@ QUERY PARAMS:         none
 PATH PARAMS:          `id` (string) — VisitInstance id
 REQUEST BODY:
 ```json
-{ "otp": "482915" }
+{ "otp": "4829" }
 ```
-- Exactly 6 digits.
+- Exactly 4 digits.
 
 SUCCESS RESPONSE (200):
 ```json

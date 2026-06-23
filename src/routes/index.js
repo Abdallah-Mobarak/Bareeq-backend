@@ -7,6 +7,7 @@ const adminServiceCategoriesRoutes = require('../modules/admin-service-categorie
 const adminServicesRoutes = require('../modules/admin-services/admin-services.routes');
 const customerHomeRoutes = require('../modules/customer-home/customer-home.routes');
 const customerProfileRoutes = require('../modules/customer-profile/customer-profile.routes');
+const customerUploadsRoutes = require('../modules/customer-uploads/customer-uploads.routes');
 const serviceProviderProfileRoutes = require('../modules/service-provider-profile/service-provider-profile.routes');
 const adminCustomersRoutes = require('../modules/admin-customers/admin-customers.routes');
 const adminServiceProvidersRoutes = require('../modules/admin-service-providers/admin-service-providers.routes');
@@ -82,6 +83,7 @@ router.use('/admin/service-categories', adminServiceCategoriesRoutes);
 router.use('/admin/services', adminServicesRoutes);
 router.use('/customer/home', customerHomeRoutes);
 router.use('/customer/profile', customerProfileRoutes);
+router.use('/customer/uploads', customerUploadsRoutes);
 router.use('/service-provider/profile', serviceProviderProfileRoutes);
 router.use('/admin/customers', adminCustomersRoutes);
 router.use('/admin/service-providers', adminServiceProvidersRoutes);

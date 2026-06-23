@@ -25,6 +25,9 @@ const createSchema = Joi.object({
   scheduledDate: Joi.date().iso().greater('now').required().messages({
     'date.greater': 'Scheduled date must be in the future',
   }),
+  // Relative urls returned by POST /customer/uploads. Up to 4, matching the
+  // upload endpoint's limit. Optional — bookings without photos are allowed.
+  photoUrls: Joi.array().items(Joi.string().trim().max(1024)).max(4).optional(),
   paymentMethod: Joi.string().valid('CASH', 'WALLET', 'ONLINE').required(),
 });
 

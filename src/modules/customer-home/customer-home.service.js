@@ -1,5 +1,6 @@
 const { prisma } = require('../../infrastructure/database/prisma');
 const { ApiError } = require('../../utils/ApiError');
+const { toRelativeUpload } = require('../../utils/mediaUrl');
 
 /**
  * Customer Home — Marketplace §1.2.
@@ -20,7 +21,7 @@ const serializeCategoryCard = (c) => ({
   id: c.id,
   titleAr: c.titleAr,
   titleEn: c.titleEn,
-  iconUrl: c.iconUrl,
+  iconUrl: toRelativeUpload(c.iconUrl),
 });
 
 const serializeServiceCard = (svc) => {
@@ -30,7 +31,7 @@ const serializeServiceCard = (svc) => {
     categoryId: svc.categoryId,
     titleAr: svc.titleAr,
     titleEn: svc.titleEn,
-    imageUrl: svc.imageUrl,
+    imageUrl: toRelativeUpload(svc.imageUrl),
     totalCost: formatMoney(sumCost(subs)),
     ratingAverage: svc.ratingAverage ? svc.ratingAverage.toString() : null,
     ratingCount: svc.ratingCount,
@@ -54,7 +55,7 @@ const serializeServiceDetail = (svc) => {
     titleEn: svc.titleEn,
     descriptionAr: svc.descriptionAr,
     descriptionEn: svc.descriptionEn,
-    imageUrl: svc.imageUrl,
+    imageUrl: toRelativeUpload(svc.imageUrl),
     ratingAverage: svc.ratingAverage ? svc.ratingAverage.toString() : null,
     ratingCount: svc.ratingCount,
     subcategories: subs.map(serializeSubcategory),

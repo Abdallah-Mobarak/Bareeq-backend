@@ -10,18 +10,19 @@ const authService = require('../auth/auth.service');
 const { notify } = require('../notifications/notifications.service');
 
 /**
- * In non-production we surface the OTP in the response so developers can
- * smoke-test the flow without a real mailer. Same MVP convenience as
- * visit-documentation.service. Stripped automatically in production.
+ * Surface the OTP in the response so a tester can complete signup without
+ * a working mailer. Returned in non-production always, AND in production
+ * while OTP_TEST_MODE=true (the APK-testing bypass — mirrors the SP auth
+ * flow). Stripped in production once OTP_TEST_MODE is turned off.
  */
 const includeDevOtp = (payload, code) =>
-  config.nodeEnv === 'production'
+  config.isProduction && !config.otpTestMode
     ? payload
     : {
         ...payload,
         otp: code,
         devNote:
-          'OTP is returned here ONLY in non-production. Replace mailer mock with a real provider before launch.',
+          'OTP is returned here ONLY in non-production or while OTP_TEST_MODE=true. Replace mailer mock with a real provider before launch.',
       };
 
 /**
@@ -71,7 +72,7 @@ const requestSignup = async ({ email, password: plainPassword, nameAr, nameEn, p
     }
   }
 
-  const { code, expiresAt } = await otp.issueCode(email, 'CUSTOMER_SIGNUP');
+  const { code, expiresAt } = await otp.issueCode(email, 'CUSTOMER_SIGNUP', 4);
 
   await sendEmailBestEffort({
     to: email,
@@ -183,7 +184,7 @@ const requestPasswordReset = async ({ email }) => {
 
   let issuedCode = null;
   if (user) {
-    const { code } = await otp.issueCode(email, 'CUSTOMER_PASSWORD_RESET');
+    const { code } = await otp.issueCode(email, 'CUSTOMER_PASSWORD_RESET', 4);
     issuedCode = code;
     await sendEmailBestEffort({
       to: email,

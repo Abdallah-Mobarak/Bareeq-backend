@@ -28,14 +28,14 @@ const sendOtpSchema = Joi.object({
 
 /**
  * POST /visit-instances/:id/document/verify-otp (supervisor).
- * The supervisor types the 6-digit OTP that the branch manager
+ * The supervisor types the 4-digit OTP that the branch manager
  * received. If valid → mark DOCUMENTED.
  */
 const verifyOtpSchema = Joi.object({
   otp: Joi.string()
-    .pattern(/^\d{6}$/)
+    .pattern(/^\d{4}$/)
     .required()
-    .messages({ 'string.pattern.base': 'otp must be exactly 6 digits' }),
+    .messages({ 'string.pattern.base': 'otp must be exactly 4 digits' }),
 });
 
 /**

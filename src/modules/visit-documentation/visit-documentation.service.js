@@ -5,12 +5,13 @@ const { prisma } = require('../../infrastructure/database/prisma');
 const { ApiError } = require('../../utils/ApiError');
 const password = require('../../utils/password');
 const { logger } = require('../../utils/logger');
+const { config } = require('../../config/env');
 
 /**
  * Visit Documentation — FRD §1.2.3.1 §2.5.
  *
  * Flow:
- *   1. Supervisor sends OTP (6 digits) to the branch manager's phone +
+ *   1. Supervisor sends OTP (4 digits) to the branch manager's phone +
  *      generates a public documentation URL (long random slug).
  *   2. Branch manager opens the URL — no auth, no JWT, just the slug.
  *      Sees the visit details; can fill jobNumber + rating + comments.
@@ -29,7 +30,7 @@ const OTP_TTL_MINUTES = 30;
 const TOKEN_BYTES = 24; // 32-char base64url ≈ enough randomness
 
 const generateOtp = () =>
-  String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+  String(crypto.randomInt(0, 10_000)).padStart(4, '0');
 
 const generateToken = () => crypto.randomBytes(TOKEN_BYTES).toString('base64url');
 
@@ -138,7 +139,14 @@ const verifyOtp = async (visitInstanceId, supervisorId, { otp }) => {
     throw ApiError.conflict('Visit is already documented');
   }
 
-  const ok = await password.compare(otp, inst.documentationOtpHash);
+  // OTP_TEST_MODE master-code bypass — accept the fixed test code (default
+  // 0000) so a test build can clear the documentation OTP screen with no SMS.
+  // SECURITY: gated behind OTP_TEST_MODE; turn OFF before launch.
+  const masterBypass = config.otpTestMode && otp === config.otpTestCode;
+  if (masterBypass) {
+    logger.warn({ visitInstanceId }, 'OTP_TEST_MODE master code accepted — disable before launch');
+  }
+  const ok = masterBypass || (await password.compare(otp, inst.documentationOtpHash));
   if (!ok) {
     throw ApiError.badRequest('Invalid OTP');
   }

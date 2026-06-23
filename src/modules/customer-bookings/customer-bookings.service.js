@@ -3,6 +3,7 @@ const { ApiError } = require('../../utils/ApiError');
 const { logger } = require('../../utils/logger');
 const walletService = require('../../services/wallet.service');
 const { notify } = require('../notifications/notifications.service');
+const { toRelativeUpload } = require('../../utils/mediaUrl');
 
 /**
  * Customer-side booking flow — FRD §1.3.
@@ -39,7 +40,7 @@ const serialize = (b) => ({
         id: b.service.id,
         titleAr: b.service.titleAr,
         titleEn: b.service.titleEn,
-        imageUrl: b.service.imageUrl,
+        imageUrl: toRelativeUpload(b.service.imageUrl),
       }
     : undefined,
   customerId: b.customerId,
@@ -53,6 +54,7 @@ const serialize = (b) => ({
       }
     : null,
   description: b.description,
+  photoUrls: (b.photoUrls || []).map(toRelativeUpload),
   locationLat: b.locationLat ? b.locationLat.toString() : null,
   locationLng: b.locationLng ? b.locationLng.toString() : null,
   locationAddress: b.locationAddress,
@@ -113,6 +115,7 @@ const createBooking = async (customerId, data) => {
         customerId,
         serviceId: service.id,
         description: data.description || null,
+        photoUrls: data.photoUrls || [],
         locationLat: data.locationLat ?? null,
         locationLng: data.locationLng ?? null,
         locationAddress: data.locationAddress || null,

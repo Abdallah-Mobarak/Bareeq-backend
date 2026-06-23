@@ -39,8 +39,12 @@ const excelUpload = multer({
  */
 const wrap = (mw) => (req, res, next) =>
   mw(req, res, (err) => {
-    if (!err) return next();
-    if (err instanceof ApiError) return next(err);
+    if (!err) {
+      return next();
+    }
+    if (err instanceof ApiError) {
+      return next(err);
+    }
     if (err.code === 'LIMIT_FILE_SIZE') {
       return next(ApiError.badRequest('File too large (max 5MB)'));
     }
@@ -82,8 +86,25 @@ const imageUpload = multer({
   },
 }).single('image');
 
+/**
+ * Multi-image uploader for the customer app (booking request photos,
+ * Marketplace §1.3). Up to 4 images under the `files` field, 5MB each.
+ * The service layer persists the buffers and returns relative public URLs.
+ */
+const marketplacePhotosUpload = multer({
+  storage: memoryStorage,
+  limits: { fileSize: 5 * 1024 * 1024, files: 4 },
+  fileFilter: (req, file, cb) => {
+    if (!PHOTO_MIMES.has(file.mimetype)) {
+      return cb(new ApiError(400, 'Only JPEG, PNG, or WebP images are accepted'));
+    }
+    cb(null, true);
+  },
+}).array('files', 4);
+
 module.exports = {
   excelUpload: wrap(excelUpload),
   visitPhotoUpload: wrap(visitPhotoUpload),
   imageUpload: wrap(imageUpload),
+  marketplacePhotosUpload: wrap(marketplacePhotosUpload),
 };

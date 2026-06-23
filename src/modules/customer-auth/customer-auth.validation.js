@@ -28,8 +28,8 @@ const nameArField = Joi.string().trim().min(2).max(100).required();
 const nameEnField = Joi.string().trim().min(2).max(100).optional().allow(null, '');
 
 const otpField = Joi.string()
-  .length(6)
-  .pattern(/^\d{6}$/)
+  .length(4)
+  .pattern(/^\d{4}$/)
   .required();
 
 const signupRequestSchema = Joi.object({

@@ -16,6 +16,7 @@
     "seed:permissions": "node scripts/seed-permissions.js",
     "seed:locations": "node scripts/seed-locations.js",
     "seed:categories": "node scripts/seed-categories.js",
+    "seed:notifications": "node scripts/seed-notifications.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"src/**/*.js\" \"prisma/**/*.prisma\" \"*.{json,md,js}\"",
