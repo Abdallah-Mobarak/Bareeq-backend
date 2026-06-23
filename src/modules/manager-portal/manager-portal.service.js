@@ -552,6 +552,10 @@ const getBranchDetail = async (scheduledVisitId) => {
       lockedAt: i.lockedAt,
       notImplementedReason: i.notImplementedReason,
       jobNumber: i.jobNumber,
+      // Branch-manager phone the supervisor entered when issuing the
+      // documentation OTP/link (FRD §1.2.3.1). Surfaced here so the
+      // visit detail shows who documented it, next to jobNumber/rating.
+      branchManagerPhone: i.branchManagerPhone,
       rating: i.rating,
       comments: i.comments,
       documentedAt: i.documentedAt,
@@ -1710,6 +1714,40 @@ const serializeAdditionalTask = (t) => ({
 });
 
 /**
+ * Detail serializer for GET /manager/additional-tasks/:id. Extends the
+ * base shape with the supervisor's EXECUTION state — the fields the
+ * additional-task model actually carries (start/end/timer/GPS, lock,
+ * not-implemented reason, visit note).
+ *
+ * NOTE on parity with /manager/branches/:id: the documentation-OTP flow
+ * (jobNumber / branchManagerPhone / rating / documentedAt), photos, and
+ * the required-task checklist are required by FRD §1.4.4.1 + §3.9.6 but
+ * are still DEFERRED for AdditionalTask (see supervisor-additional-tasks.
+ * service.js header). Until that phase lands we omit them here rather
+ * than fake them as null. Add them when the deferred work ships.
+ */
+const serializeAdditionalTaskDetail = (t) => ({
+  ...serializeAdditionalTask(t),
+  startedAt: t.startedAt,
+  endedAt: t.endedAt,
+  durationSeconds: t.durationSeconds,
+  startLatitude: t.startLatitude,
+  startLongitude: t.startLongitude,
+  lockedAt: t.lockedAt,
+  notImplementedReason: t.notImplementedReason
+    ? {
+        id: t.notImplementedReason.id,
+        titleAr: t.notImplementedReason.titleAr,
+        titleEn: t.notImplementedReason.titleEn,
+      }
+    : null,
+  notImplementedNote: t.notImplementedNote,
+  // The supervisor's free-text note on the task — the additional-task
+  // equivalent of a visit's `comments`.
+  comments: t.visitNote,
+});
+
+/**
  * Validate that the chosen supervisor exists, is enabled, and is
  * actually a SUPERVISOR. Run on create AND update — accidentally
  * assigning a task to a manager would let it silently disappear from
@@ -1852,10 +1890,11 @@ const getAdditionalTaskById = async (id) => {
     include: {
       manager: { select: { id: true, nameAr: true, nameEn: true } },
       supervisor: { select: { id: true, nameAr: true, nameEn: true } },
+      notImplementedReason: { select: { id: true, titleAr: true, titleEn: true } },
     },
   });
   if (!task) throw ApiError.notFound('Additional task not found');
-  return serializeAdditionalTask(task);
+  return serializeAdditionalTaskDetail(task);
 };
 
 const updateAdditionalTask = async (id, body) => {
