@@ -907,6 +907,7 @@ const getMyMonthlyReport = async (userId, { year, month }) => {
     select: {
       visitOrder: true,
       status: true,
+      documentationStatus: true,
       scheduledVisit: {
         select: {
           regionScheduling: {
@@ -939,7 +940,7 @@ const getMyMonthlyReport = async (userId, { year, month }) => {
       city: rs.city,
       numberOfVisits: rs.numberOfVisits,
       perVisitType: {},
-      totals: { total: 0, implemented: 0, remaining: 0 },
+      totals: { total: 0, implemented: 0, remaining: 0, documented: 0, undocumented: 0 },
     };
     // Pre-seed visit type buckets so V's with zero instances still
     // appear in the response (the frontend can render an empty column
@@ -953,7 +954,7 @@ const getMyMonthlyReport = async (userId, { year, month }) => {
 
   // Grand totals across all branches.
   const grandPerV = {};
-  const grandAll = { total: 0, implemented: 0, remaining: 0 };
+  const grandAll = { total: 0, implemented: 0, remaining: 0, documented: 0, undocumented: 0 };
 
   for (const inst of instances) {
     const rs = inst.scheduledVisit?.regionScheduling;
@@ -961,6 +962,9 @@ const getMyMonthlyReport = async (userId, { year, month }) => {
 
     const row = ensureBranch(rs);
     const isImplemented = inst.status === 'IMPLEMENTED';
+    // Documentation is tracked per instance (DOCUMENTED vs UNDOCUMENTED) and,
+    // unlike the dashboard, is scoped to this month via the query above.
+    const isDocumented = inst.documentationStatus === 'DOCUMENTED';
 
     // Per-branch tally.
     const vKey = `V${inst.visitOrder}`;
@@ -973,6 +977,8 @@ const getMyMonthlyReport = async (userId, { year, month }) => {
     row.totals.total += 1;
     if (isImplemented) row.totals.implemented += 1;
     else row.totals.remaining += 1;
+    if (isDocumented) row.totals.documented += 1;
+    else row.totals.undocumented += 1;
 
     // Grand totals.
     const gBucket = grandPerV[vKey] || { total: 0, implemented: 0, remaining: 0 };
@@ -984,6 +990,8 @@ const getMyMonthlyReport = async (userId, { year, month }) => {
     grandAll.total += 1;
     if (isImplemented) grandAll.implemented += 1;
     else grandAll.remaining += 1;
+    if (isDocumented) grandAll.documented += 1;
+    else grandAll.undocumented += 1;
   }
 
   // Stable ordering: by brandName then city so the same report renders
