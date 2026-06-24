@@ -8,6 +8,7 @@ const adminServicesRoutes = require('../modules/admin-services/admin-services.ro
 const customerHomeRoutes = require('../modules/customer-home/customer-home.routes');
 const customerProfileRoutes = require('../modules/customer-profile/customer-profile.routes');
 const customerUploadsRoutes = require('../modules/customer-uploads/customer-uploads.routes');
+const customerContactRoutes = require('../modules/customer-contact/customer-contact.routes');
 const locationsRoutes = require('../modules/locations/locations.routes');
 const serviceProviderProfileRoutes = require('../modules/service-provider-profile/service-provider-profile.routes');
 const adminCustomersRoutes = require('../modules/admin-customers/admin-customers.routes');
@@ -67,6 +68,10 @@ const {
   supervisorRouter: visitDocSupervisorRoutes,
   publicRouter: visitDocPublicRoutes,
 } = require('../modules/visit-documentation/visit-documentation.routes');
+const {
+  supervisorRouter: additionalTaskDocSupervisorRoutes,
+  publicRouter: additionalTaskDocPublicRoutes,
+} = require('../modules/additional-task-documentation/additional-task-documentation.routes');
 
 const router = Router();
 
@@ -85,6 +90,7 @@ router.use('/admin/services', adminServicesRoutes);
 router.use('/customer/home', customerHomeRoutes);
 router.use('/customer/profile', customerProfileRoutes);
 router.use('/customer/uploads', customerUploadsRoutes);
+router.use('/customer/contact', customerContactRoutes);
 router.use('/service-provider/profile', serviceProviderProfileRoutes);
 router.use('/admin/customers', adminCustomersRoutes);
 router.use('/admin/service-providers', adminServiceProvidersRoutes);
@@ -119,6 +125,7 @@ router.use('/monthly-schedules', monthlySchedulesRoutes);
 router.use('/scheduled-visits', scheduledVisitsRoutes);
 router.use('/supervisor', supervisorScheduleRoutes);
 router.use('/supervisor/additional-tasks', supervisorAdditionalTasksRoutes);
+router.use('/supervisor/additional-tasks', additionalTaskDocSupervisorRoutes);
 router.use('/company', companyPortalRoutes);
 router.use('/manager', managerPortalRoutes);
 router.use('/manager/clients', managerMonthlySalesRoutes);
@@ -142,6 +149,7 @@ router.use('/admin/users', adminUsersRoutes);
 router.use('/visit-instances', visitInstancesRoutes);
 router.use('/visit-instances', visitDocSupervisorRoutes);
 router.use('/public/document', visitDocPublicRoutes);
+router.use('/public/additional-task-document', additionalTaskDocPublicRoutes);
 
 router.get('/', (req, res) => {
   res.json({
