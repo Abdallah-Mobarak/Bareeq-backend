@@ -8,6 +8,8 @@ const {
   createScheduleSchema,
   listSchedulesQuerySchema,
   idParamSchema,
+  instanceIdParamSchema,
+  updateInstanceDateSchema,
   announceReportSchema,
 } = require('./monthly-schedules.validation');
 
@@ -21,5 +23,12 @@ router.post('/', validate(createScheduleSchema), controller.create);
 router.post('/announce-report', validate(announceReportSchema), controller.announceReport);
 router.get('/:id', validate(idParamSchema, 'params'), controller.getOne);
 router.delete('/:id', validate(idParamSchema, 'params'), controller.remove);
+// Reschedule a single REMAINING visit from the schedule-detail card.
+router.patch(
+  '/instances/:instanceId',
+  validate(instanceIdParamSchema, 'params'),
+  validate(updateInstanceDateSchema),
+  controller.updateInstanceDate,
+);
 
 module.exports = router;

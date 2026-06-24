@@ -416,6 +416,64 @@ const deleteSchedule = async (id) => {
 };
 
 /**
+ * Reschedule a single REMAINING visit instance from the admin's monthly
+ * schedule card. Only the date moves; everything else is untouched.
+ *
+ * Guards:
+ *   - 404 if the instance (or its parent visit/schedule) is missing/deleted.
+ *   - 409 if the visit is not REMAINING — a done visit (IMPLEMENTED /
+ *     NOT_IMPLEMENTED / FINAL_CLOSED) is locked and its date can't change.
+ *   - 400 if the new date leaves the schedule's calendar month — a
+ *     MonthlySchedule is single-month by definition (see deriveYearMonth).
+ */
+const updateInstanceDate = async (instanceId, scheduledDate) => {
+  const inst = await prisma.visitInstance.findFirst({
+    where: {
+      id: instanceId,
+      deletedAt: null,
+      scheduledVisit: {
+        deletedAt: null,
+        monthlySchedule: { deletedAt: null },
+      },
+    },
+    include: {
+      scheduledVisit: { include: { monthlySchedule: true } },
+    },
+  });
+  if (!inst) {
+    throw ApiError.notFound('Visit instance not found');
+  }
+
+  if (inst.status !== 'REMAINING') {
+    throw ApiError.conflict(
+      `Visit is already ${inst.status} and its date cannot be changed`,
+      { currentStatus: inst.status, lockedAt: inst.lockedAt },
+    );
+  }
+
+  const newDate = new Date(scheduledDate);
+  const { year, month } = inst.scheduledVisit.monthlySchedule;
+  if (newDate.getUTCFullYear() !== year || newDate.getUTCMonth() + 1 !== month) {
+    throw ApiError.badRequest(
+      'New visit date must fall within the schedule month',
+      { scheduleYear: year, scheduleMonth: month, requestedDate: newDate.toISOString() },
+    );
+  }
+
+  const updated = await prisma.visitInstance.update({
+    where: { id: instanceId },
+    data: { scheduledDate: newDate },
+  });
+
+  logger.info(
+    { instanceId, scheduledDate: newDate.toISOString() },
+    'Visit instance rescheduled by admin',
+  );
+
+  return serializeInstance(updated);
+};
+
+/**
  * Announce that a month's report is ready to view (FRD §2.5 "Monthly report
  * is now available for viewing"). Admin-triggered: the report itself is a
  * live query, so this is the explicit "release" signal companies subscribe
@@ -476,5 +534,6 @@ module.exports = {
   listSchedules,
   getSchedule,
   deleteSchedule,
+  updateInstanceDate,
   announceMonthlyReport,
 };

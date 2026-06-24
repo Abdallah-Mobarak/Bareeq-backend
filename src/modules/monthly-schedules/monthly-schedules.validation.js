@@ -61,6 +61,15 @@ const idParamSchema = Joi.object({
   id: Joi.string().required(),
 });
 
+// PATCH /monthly-schedules/instances/:instanceId — reschedule one REMAINING visit.
+const instanceIdParamSchema = Joi.object({
+  instanceId: Joi.string().required(),
+});
+
+const updateInstanceDateSchema = Joi.object({
+  scheduledDate: Joi.date().iso().required(),
+});
+
 // POST /monthly-schedules/announce-report — admin releases a month's report.
 const announceReportSchema = Joi.object({
   year: Joi.number().integer().min(2024).max(2100).required(),
@@ -71,5 +80,7 @@ module.exports = {
   createScheduleSchema,
   listSchedulesQuerySchema,
   idParamSchema,
+  instanceIdParamSchema,
+  updateInstanceDateSchema,
   announceReportSchema,
 };

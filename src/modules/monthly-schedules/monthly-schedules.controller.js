@@ -26,4 +26,12 @@ const announceReport = asyncHandler(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
-module.exports = { create, list, getOne, remove, announceReport };
+const updateInstanceDate = asyncHandler(async (req, res) => {
+  const instance = await service.updateInstanceDate(
+    req.params.instanceId,
+    req.body.scheduledDate,
+  );
+  res.json({ success: true, data: { instance } });
+});
+
+module.exports = { create, list, getOne, remove, announceReport, updateInstanceDate };
