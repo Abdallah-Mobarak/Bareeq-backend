@@ -299,7 +299,7 @@ const companyAllBranchAccountantManagers = (companyId) =>
  * the other's :id route. `allBranchAms` is the company's all-branches AM
  * list, shared across rows.
  */
-const serializeAllBranchRow = (rs, allBranchAms = []) => ({
+const serializeAllBranchRow = (rs, allBranchAms = [], lastVisitDate = null) => ({
   id: rs.id,
   companyName: rs.companyName,
   branchName: rs.branchName,
@@ -315,10 +315,44 @@ const serializeAllBranchRow = (rs, allBranchAms = []) => ({
   longitude: rs.longitude,
   numberOfVisits: rs.numberOfVisits,
   code: rs.code,
+  // Date of this branch's most recent IMPLEMENTED visit (ISO), or null if it
+  // has never been visited. Powers the "Last Visit: <date>" line on the card.
+  lastVisitDate,
   visitTypes: visitTypesFor(rs.numberOfVisits),
   assignedSupervisors: collectSupervisors(rs.scheduledVisits),
   assignedAccountantManagers: collectAccountantManagers(rs.accountantAssignments, allBranchAms),
 });
+
+/**
+ * Latest IMPLEMENTED visit date per branch, for the given RegionScheduling
+ * ids. One small query for the current page only; decoupled from the optional
+ * year/month filter so "Last Visit" always reflects the true most recent
+ * visit, not just the filtered period.
+ * @returns {Promise<Map<string, Date>>} regionSchedulingId → last visit date
+ */
+const lastVisitDatesFor = async (branchIds) => {
+  const map = new Map();
+  if (branchIds.length === 0) return map;
+
+  const visits = await prisma.visitInstance.findMany({
+    where: {
+      deletedAt: null,
+      status: 'IMPLEMENTED',
+      scheduledVisit: { regionSchedulingId: { in: branchIds }, deletedAt: null },
+    },
+    select: {
+      scheduledDate: true,
+      scheduledVisit: { select: { regionSchedulingId: true } },
+    },
+  });
+
+  for (const v of visits) {
+    const branchId = v.scheduledVisit.regionSchedulingId;
+    const current = map.get(branchId);
+    if (!current || v.scheduledDate > current) map.set(branchId, v.scheduledDate);
+  }
+  return map;
+};
 
 /**
  * GET /company/all-branches
@@ -423,8 +457,10 @@ const listAllMyBranches = async (userId, rawQuery) => {
     ]),
   ]);
 
+  const lastVisits = await lastVisitDatesFor(items.map((rs) => rs.id));
+
   return {
-    items: items.map((rs) => serializeAllBranchRow(rs, allBranchAms)),
+    items: items.map((rs) => serializeAllBranchRow(rs, allBranchAms, lastVisits.get(rs.id) || null)),
     pagination: {
       page,
       limit,
