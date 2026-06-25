@@ -185,6 +185,17 @@ const overviewExportQuerySchema = Joi.object({
  * `updateAdditionalTaskSchema` makes everything optional so PATCH can
  * change a single field without re-sending the whole record.
  */
+/**
+ * Manager-authored required-task checklist for an additional task
+ * (FRD §1.4.4.1). The manager types the tasks at creation since an
+ * additional task has no predefined branch task list.
+ */
+const additionalTaskRequiredTaskSchema = Joi.object({
+  titleAr: Joi.string().trim().min(1).max(300).required(),
+  titleEn: Joi.string().trim().max(300).optional().allow(null, ''),
+  sortOrder: Joi.number().integer().min(0).optional(),
+});
+
 const createAdditionalTaskSchema = Joi.object({
   supervisorId: Joi.string().trim().min(1).max(40).required(),
   companyName: Joi.string().trim().min(1).max(150).required(),
@@ -197,6 +208,7 @@ const createAdditionalTaskSchema = Joi.object({
   visitDate: Joi.date().iso().required(),
   price: Joi.number().min(0).optional().allow(null),
   notes: Joi.string().trim().max(2000).optional().allow(null, ''),
+  requiredTasks: Joi.array().items(additionalTaskRequiredTaskSchema).max(50).default([]),
 });
 
 const updateAdditionalTaskSchema = Joi.object({
@@ -211,6 +223,9 @@ const updateAdditionalTaskSchema = Joi.object({
   visitDate: Joi.date().iso().optional(),
   price: Joi.number().min(0).optional().allow(null),
   notes: Joi.string().trim().max(2000).optional().allow(null, ''),
+  // When provided, replaces the whole checklist (manager owns the
+  // definition). Only honoured while the task is still REMAINING.
+  requiredTasks: Joi.array().items(additionalTaskRequiredTaskSchema).max(50).optional(),
 })
   .min(1); // PATCH with empty body is almost certainly a bug — fail fast.
 

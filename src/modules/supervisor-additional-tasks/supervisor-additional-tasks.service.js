@@ -1,5 +1,9 @@
+const path = require('node:path');
+const fs = require('node:fs/promises');
+
 const { prisma } = require('../../infrastructure/database/prisma');
 const { ApiError } = require('../../utils/ApiError');
+const { logger } = require('../../utils/logger');
 
 /**
  * Supervisor-facing read + state-transition API for AdditionalTask.
@@ -49,6 +53,28 @@ const serializeTask = (t) => ({
   notImplementedReason: t.notImplementedReason ?? null,
   notImplementedNote: t.notImplementedNote ?? null,
   visitNote: t.visitNote ?? null,
+  // Visit documentation (FRD §1.4.4.1) — populated through the
+  // additional-task-documentation OTP flow.
+  branchManagerPhone: t.branchManagerPhone ?? null,
+  jobNumber: t.jobNumber ?? null,
+  rating: t.rating ?? null,
+  comments: t.comments ?? null,
+  documentedAt: t.documentedAt ?? null,
+  photos: (t.photos || []).map((p) => ({
+    id: p.id,
+    url: p.url,
+    sizeBytes: p.sizeBytes,
+    mimeType: p.mimeType,
+    uploadedAt: p.uploadedAt,
+  })),
+  // Manager-authored required tasks the supervisor must check off.
+  taskChecks: (t.taskChecks || []).map((c) => ({
+    id: c.id,
+    titleAr: c.titleAr,
+    titleEn: c.titleEn,
+    sortOrder: c.sortOrder,
+    done: c.done,
+  })),
   createdAt: t.createdAt,
   updatedAt: t.updatedAt,
 });
@@ -63,6 +89,8 @@ const loadOwned = async (taskId, supervisorId, tx = prisma) => {
     include: {
       manager: { select: { id: true, nameAr: true, nameEn: true } },
       notImplementedReason: { select: { id: true, titleAr: true, titleEn: true } },
+      photos: { where: { deletedAt: null }, orderBy: { uploadedAt: 'asc' } },
+      taskChecks: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] },
     },
   });
   if (!task) throw ApiError.notFound('Additional task not found');
@@ -341,6 +369,110 @@ const notImplementTask = async (
   });
 };
 
+/**
+ * PATCH /supervisor/additional-tasks/:id/tasks/:taskCheckId.
+ * Toggle a required task's done flag. Allowed while UNDERWAY — the
+ * supervisor ticks tasks off during the visit (FRD §1.4.4.1).
+ */
+const toggleTaskCheck = async (taskId, taskCheckId, supervisorId, { done }) => {
+  const task = await loadOwned(taskId, supervisorId);
+  if (task.status !== 'UNDERWAY') {
+    throw ApiError.conflict(
+      `Tasks can only be checked while the visit is UNDERWAY (currently ${task.status})`,
+    );
+  }
+
+  const tc = task.taskChecks.find((c) => c.id === taskCheckId);
+  if (!tc) {
+    throw ApiError.notFound('Task check not found for this task');
+  }
+
+  await prisma.additionalTaskCheck.update({
+    where: { id: taskCheckId },
+    data: { done },
+  });
+
+  const reread = await loadOwned(taskId, supervisorId);
+  return serializeTask(reread);
+};
+
+// ── Photos (FRD §1.4.4.1 "upload or capture 3 to 4 photos") ───────────
+const PHOTOS_DIR = path.join(__dirname, '..', '..', '..', 'uploads', 'additional-tasks');
+const PHOTO_PUBLIC_PREFIX = '/uploads/additional-tasks';
+const MAX_PHOTOS_PER_TASK = 4;
+
+const extFromMime = (mime) => {
+  if (mime === 'image/png') return 'png';
+  if (mime === 'image/webp') return 'webp';
+  return 'jpg';
+};
+
+/**
+ * POST /supervisor/additional-tasks/:id/photos.
+ * Allowed while UNDERWAY (during the visit) or after IMPLEMENTED (§3.2 —
+ * "if implemented, images can be modified"). Cumulative cap: 4 per task.
+ */
+const addPhotos = async (taskId, supervisorId, files) => {
+  if (!files || files.length === 0) {
+    throw ApiError.badRequest('No photos uploaded (field name: photos)');
+  }
+
+  const task = await loadOwned(taskId, supervisorId);
+  if (!['UNDERWAY', 'IMPLEMENTED'].includes(task.status)) {
+    throw ApiError.conflict(
+      `Photos can only be uploaded while UNDERWAY or after IMPLEMENTED (currently ${task.status})`,
+    );
+  }
+
+  const existing = task.photos.length;
+  if (existing + files.length > MAX_PHOTOS_PER_TASK) {
+    throw ApiError.badRequest(
+      `Task already has ${existing} photo(s); max ${MAX_PHOTOS_PER_TASK} per task`,
+    );
+  }
+
+  const dir = path.join(PHOTOS_DIR, taskId);
+  await fs.mkdir(dir, { recursive: true });
+
+  const created = [];
+  for (let i = 0; i < files.length; i += 1) {
+    const f = files[i];
+    const ext = extFromMime(f.mimetype);
+    const filename = `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
+    // eslint-disable-next-line no-await-in-loop
+    await fs.writeFile(path.join(dir, filename), f.buffer);
+    created.push({
+      additionalTaskId: taskId,
+      url: `${PHOTO_PUBLIC_PREFIX}/${taskId}/${filename}`,
+      sizeBytes: f.size,
+      mimeType: f.mimetype,
+    });
+  }
+
+  await prisma.additionalTaskPhoto.createMany({ data: created });
+
+  const reread = await loadOwned(taskId, supervisorId);
+  logger.info({ taskId, supervisorId, added: files.length }, 'Additional-task photos uploaded');
+  return serializeTask(reread);
+};
+
+const deletePhoto = async (taskId, photoId, supervisorId) => {
+  const task = await loadOwned(taskId, supervisorId);
+  if (!['UNDERWAY', 'IMPLEMENTED'].includes(task.status)) {
+    throw ApiError.conflict(`Photos cannot be removed while status is ${task.status}`);
+  }
+  const photo = task.photos.find((p) => p.id === photoId);
+  if (!photo) {
+    throw ApiError.notFound('Photo not found for this task');
+  }
+  await prisma.additionalTaskPhoto.update({
+    where: { id: photoId },
+    data: { deletedAt: new Date() },
+  });
+  const reread = await loadOwned(taskId, supervisorId);
+  return serializeTask(reread);
+};
+
 module.exports = {
   listMyTasks,
   getMyTaskDetail,
@@ -349,4 +481,7 @@ module.exports = {
   completeTask,
   finalCloseTask,
   notImplementTask,
+  toggleTaskCheck,
+  addPhotos,
+  deletePhoto,
 };

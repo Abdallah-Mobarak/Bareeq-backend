@@ -693,6 +693,23 @@ model AdditionalTask {
   notImplementedNote     String?               @map("not_implemented_note")
   visitNote              String?               @map("visit_note")
 
+  // ── Visit documentation (FRD §1.4.4.1 / §3.9.6) ─────────────────────
+  // Mirrors the VisitInstance documentation columns: once IMPLEMENTED the
+  // supervisor sends a 4-digit OTP + a public link to the branch manager's
+  // phone; the manager fills job number / rating / comments via the link;
+  // the supervisor verifies the OTP to flip documentationStatus.
+  branchManagerPhone   String?   @map("branch_manager_phone")
+  documentationOtpHash String?   @map("documentation_otp_hash")
+  otpExpiresAt         DateTime? @map("otp_expires_at")
+  documentationToken   String?   @unique @map("documentation_token")
+  jobNumber            String?   @map("job_number")
+  rating               Int? // 1..5, validated at service layer
+  comments             String?
+  documentedAt         DateTime? @map("documented_at")
+
+  photos     AdditionalTaskPhoto[]
+  taskChecks AdditionalTaskCheck[]
+
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
@@ -703,6 +720,45 @@ model AdditionalTask {
   @@index([status])
   @@index([deletedAt])
   @@map("additional_tasks")
+}
+
+/// Manager-defined required tasks for an additional task (FRD §1.4.4.1).
+/// Unlike VisitInstanceTaskCheck (snapshotted from a branch's
+/// RegionSchedulingTask), these are authored directly by the manager when
+/// creating the task — an additional task has no predefined task list. The
+/// supervisor toggles `done` while executing the visit.
+model AdditionalTaskCheck {
+  id               String         @id @default(cuid())
+  additionalTaskId String         @map("additional_task_id")
+  additionalTask   AdditionalTask @relation(fields: [additionalTaskId], references: [id], onDelete: Cascade)
+
+  titleAr   String  @map("title_ar")
+  titleEn   String? @map("title_en")
+  sortOrder Int     @default(0) @map("sort_order")
+  done      Boolean @default(false)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([additionalTaskId])
+  @@map("additional_task_checks")
+}
+
+/// Photos the supervisor captures while executing an additional task
+/// (FRD §1.4.4.1 "upload or capture 3 to 4 photos"). Mirrors
+/// VisitInstancePhoto but on the AdditionalTask table.
+model AdditionalTaskPhoto {
+  id               String         @id @default(cuid())
+  additionalTaskId String         @map("additional_task_id")
+  additionalTask   AdditionalTask @relation(fields: [additionalTaskId], references: [id], onDelete: Cascade)
+  url              String
+  sizeBytes        Int?           @map("size_bytes")
+  mimeType         String?        @map("mime_type")
+  uploadedAt       DateTime       @default(now()) @map("uploaded_at")
+  deletedAt        DateTime?      @map("deleted_at")
+
+  @@index([additionalTaskId])
+  @@map("additional_task_photos")
 }
 
 // ============================================

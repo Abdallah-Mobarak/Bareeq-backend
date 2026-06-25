@@ -75,6 +75,29 @@ const notImplementTask = asyncHandler(async (req, res) => {
   res.json({ success: true, data });
 });
 
+/** PATCH /supervisor/additional-tasks/:id/tasks/:taskCheckId — FRD §1.4.4.1 */
+const toggleTask = asyncHandler(async (req, res) => {
+  const data = await service.toggleTaskCheck(
+    req.params.id,
+    req.params.taskCheckId,
+    req.user.id,
+    req.body,
+  );
+  res.json({ success: true, data });
+});
+
+/** POST /supervisor/additional-tasks/:id/photos — FRD §1.4.4.1 (3-4 photos) */
+const uploadPhotos = asyncHandler(async (req, res) => {
+  const data = await service.addPhotos(req.params.id, req.user.id, req.files);
+  res.json({ success: true, data });
+});
+
+/** DELETE /supervisor/additional-tasks/:id/photos/:photoId — §3.2 image edit */
+const removePhoto = asyncHandler(async (req, res) => {
+  const data = await service.deletePhoto(req.params.id, req.params.photoId, req.user.id);
+  res.json({ success: true, data });
+});
+
 module.exports = {
   listMyTasks,
   getMyTaskDetail,
@@ -84,4 +107,7 @@ module.exports = {
   completeTask,
   finalCloseTask,
   notImplementTask,
+  toggleTask,
+  uploadPhotos,
+  removePhoto,
 };

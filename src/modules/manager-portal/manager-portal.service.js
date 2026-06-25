@@ -1719,12 +1719,11 @@ const serializeAdditionalTask = (t) => ({
  * additional-task model actually carries (start/end/timer/GPS, lock,
  * not-implemented reason, visit note).
  *
- * NOTE on parity with /manager/branches/:id: the documentation-OTP flow
- * (jobNumber / branchManagerPhone / rating / documentedAt), photos, and
- * the required-task checklist are required by FRD §1.4.4.1 + §3.9.6 but
- * are still DEFERRED for AdditionalTask (see supervisor-additional-tasks.
- * service.js header). Until that phase lands we omit them here rather
- * than fake them as null. Add them when the deferred work ships.
+ * Parity with /manager/branches/:id (instances[*]): exposes execution
+ * state, the visit-documentation fields (FRD §1.4.4.1 / §3.9.6), photos,
+ * and the manager-authored required-task checklist. For an additional
+ * task the checklist IS the required tasks (the manager types them at
+ * creation), so `taskChecks` and `requiredTasks` describe the same rows.
  */
 const serializeAdditionalTaskDetail = (t) => ({
   ...serializeAdditionalTask(t),
@@ -1742,9 +1741,37 @@ const serializeAdditionalTaskDetail = (t) => ({
       }
     : null,
   notImplementedNote: t.notImplementedNote,
-  // The supervisor's free-text note on the task — the additional-task
-  // equivalent of a visit's `comments`.
-  comments: t.visitNote,
+  // Supervisor's own free-text note (set on complete), kept distinct from
+  // the branch-manager documentation `comments` below.
+  visitNote: t.visitNote,
+  // ── Visit documentation (parity with the visit instance shape) ──────
+  branchManagerPhone: t.branchManagerPhone,
+  jobNumber: t.jobNumber,
+  rating: t.rating,
+  comments: t.comments,
+  documentedAt: t.documentedAt,
+  photos: (t.photos || []).map((p) => ({
+    id: p.id,
+    url: p.url,
+    sizeBytes: p.sizeBytes,
+    mimeType: p.mimeType,
+    uploadedAt: p.uploadedAt,
+  })),
+  // Manager-authored checklist + the supervisor's done flags.
+  taskChecks: (t.taskChecks || []).map((c) => ({
+    id: c.id,
+    titleAr: c.titleAr,
+    titleEn: c.titleEn,
+    sortOrder: c.sortOrder,
+    done: c.done,
+  })),
+  // Parity alias: the same rows seen as the "required tasks" definition.
+  requiredTasks: (t.taskChecks || []).map((c) => ({
+    id: c.id,
+    titleAr: c.titleAr,
+    titleEn: c.titleEn,
+    sortOrder: c.sortOrder,
+  })),
 });
 
 /**
@@ -1779,6 +1806,15 @@ const createAdditionalTask = async (managerId, body) => {
       visitDate: new Date(body.visitDate),
       price: body.price ?? null,
       notes: body.notes ?? null,
+      ...(body.requiredTasks?.length && {
+        taskChecks: {
+          create: body.requiredTasks.map((t, i) => ({
+            titleAr: t.titleAr,
+            titleEn: t.titleEn || null,
+            sortOrder: t.sortOrder ?? i,
+          })),
+        },
+      }),
     },
     include: {
       manager: { select: { id: true, nameAr: true, nameEn: true } },
@@ -1891,6 +1927,8 @@ const getAdditionalTaskById = async (id) => {
       manager: { select: { id: true, nameAr: true, nameEn: true } },
       supervisor: { select: { id: true, nameAr: true, nameEn: true } },
       notImplementedReason: { select: { id: true, titleAr: true, titleEn: true } },
+      photos: { where: { deletedAt: null }, orderBy: { uploadedAt: 'asc' } },
+      taskChecks: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] },
     },
   });
   if (!task) throw ApiError.notFound('Additional task not found');
@@ -1900,11 +1938,22 @@ const getAdditionalTaskById = async (id) => {
 const updateAdditionalTask = async (id, body) => {
   const existing = await prisma.additionalTask.findFirst({
     where: { id, deletedAt: null },
-    select: { id: true },
+    select: { id: true, status: true },
   });
   if (!existing) throw ApiError.notFound('Additional task not found');
 
   if (body.supervisorId) await assertValidSupervisor(body.supervisorId);
+
+  /**
+   * The required-task checklist can only be redefined while the task is
+   * still REMAINING — once the supervisor starts executing, the checks
+   * carry their `done` state and must not be wiped out from under them.
+   */
+  if (body.requiredTasks !== undefined && existing.status !== 'REMAINING') {
+    throw ApiError.conflict(
+      `Required tasks can only be changed while the task is REMAINING (currently ${existing.status})`,
+    );
+  }
 
   const data = {};
   // Only set the fields the caller explicitly sent. We don't want a
@@ -1924,6 +1973,18 @@ const updateAdditionalTask = async (id, body) => {
   setIf('visitDate', (v) => new Date(v));
   setIf('price', (v) => v ?? null);
   setIf('notes', (v) => v ?? null);
+
+  // Replace the whole checklist when provided (guarded to REMAINING above).
+  if (body.requiredTasks !== undefined) {
+    data.taskChecks = {
+      deleteMany: {},
+      create: body.requiredTasks.map((t, i) => ({
+        titleAr: t.titleAr,
+        titleEn: t.titleEn || null,
+        sortOrder: t.sortOrder ?? i,
+      })),
+    };
+  }
 
   const updated = await prisma.additionalTask.update({
     where: { id },
