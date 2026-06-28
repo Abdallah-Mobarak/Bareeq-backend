@@ -3,7 +3,8 @@ const crypto = require('node:crypto');
 const { prisma } = require('../../infrastructure/database/prisma');
 const { ApiError } = require('../../utils/ApiError');
 const { config } = require('../../config/env');
-const { serializeTxn } = require('../../services/wallet.service');
+const { logger } = require('../../utils/logger');
+const { serializeTxn, applyTransaction } = require('../../services/wallet.service');
 const paytabs = require('../../services/paytabs.service');
 
 /**
@@ -75,6 +76,34 @@ const createTopup = async (userId, { amount }) => {
   const topup = await prisma.walletTopup.create({
     data: { customerId: userId, amount: Number(amount).toFixed(2), currency: 'SAR', cartId },
   });
+
+  // TEST MODE (no PayTabs account yet): credit the wallet immediately and
+  // return without a paymentUrl. Lets the app's "Add balance" be tested end-
+  // to-end until a real PayTabs merchant account is available.
+  if (config.walletTopupTestMode) {
+    await prisma.$transaction(async (tx) => {
+      await tx.walletTopup.update({ where: { id: topup.id }, data: { status: 'COMPLETED' } });
+      await applyTransaction(tx, {
+        userId,
+        type: 'TOPUP',
+        amount: Number(amount),
+        externalRef: cartId,
+        note: 'Wallet top-up (TEST MODE — no payment gateway)',
+      });
+    });
+    logger.warn(
+      { userId, amount: Number(amount), cartId },
+      'WALLET_TOPUP_TEST_MODE credited wallet directly — disable before launch',
+    );
+    const wallet = await getWallet(userId);
+    return {
+      paymentUrl: null,
+      topupId: topup.id,
+      status: 'COMPLETED',
+      testMode: true,
+      balance: wallet.balance,
+    };
+  }
 
   const apiBase = `${config.publicBaseUrl}${config.apiPrefix}`;
 

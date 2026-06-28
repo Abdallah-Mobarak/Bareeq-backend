@@ -79,6 +79,12 @@ const config = {
     // Saudi endpoint by default; override per region if ever needed.
     baseUrl: optional('PAYTABS_BASE_URL', 'https://secure.paytabs.sa').replace(/\/$/, ''),
   },
+
+  // TEMPORARY: when true, POST /customer/wallet/topup credits the wallet
+  // DIRECTLY (no PayTabs payment page) so the app can be tested before a real
+  // PayTabs merchant account exists. SECURITY: this lets a customer top up
+  // their own wallet for free — MUST be off once real PayTabs is configured.
+  walletTopupTestMode: optional('WALLET_TOPUP_TEST_MODE', 'false') === 'true',
 };
 
 config.isDevelopment = config.nodeEnv === 'development';
