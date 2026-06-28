@@ -66,6 +66,19 @@ const config = {
       password: optional('SMTP_PASSWORD', ''),
     },
   },
+
+  // Public origin of THIS API (no trailing slash), used to build the
+  // PayTabs callback/return URLs. Set to the deployed host in production,
+  // e.g. https://82-25-118-152.sslip.io
+  publicBaseUrl: optional('PUBLIC_BASE_URL', 'http://localhost:3000').replace(/\/$/, ''),
+
+  payTabs: {
+    profileId: optional('PAYTABS_PROFILE_ID', ''),
+    serverKey: optional('PAYTABS_SERVER_KEY', ''),
+    region: optional('PAYTABS_REGION', 'SAU'),
+    // Saudi endpoint by default; override per region if ever needed.
+    baseUrl: optional('PAYTABS_BASE_URL', 'https://secure.paytabs.sa').replace(/\/$/, ''),
+  },
 };
 
 config.isDevelopment = config.nodeEnv === 'development';

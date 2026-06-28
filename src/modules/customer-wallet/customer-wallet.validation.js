@@ -17,4 +17,14 @@ const transactionsQuerySchema = Joi.object({
     .optional(),
 });
 
-module.exports = { transactionsQuerySchema };
+// Wallet top-up: amount in SAR, positive, min 1, max 100000, max 2 decimals.
+const topupSchema = Joi.object({
+  amount: Joi.number().positive().min(1).max(100000).precision(2).required().messages({
+    'number.base': 'Amount must be a number',
+    'number.positive': 'Amount must be greater than zero',
+    'number.min': 'Minimum top-up is 1 SAR',
+    'number.max': 'Maximum top-up is 100000 SAR',
+  }),
+});
+
+module.exports = { transactionsQuerySchema, topupSchema };

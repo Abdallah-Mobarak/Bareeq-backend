@@ -11,4 +11,9 @@ const listTransactions = asyncHandler(async (req, res) => {
   res.json({ success: true, ...result });
 });
 
-module.exports = { getWallet, listTransactions };
+const createTopup = asyncHandler(async (req, res) => {
+  const result = await service.createTopup(req.user.id, req.body);
+  res.json({ success: true, data: result });
+});
+
+module.exports = { getWallet, listTransactions, createTopup };

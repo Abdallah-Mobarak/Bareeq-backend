@@ -44,9 +44,18 @@ app.use(helmet());
 app.use(cors());
 app.use(compression());
 
-// 4: Body parsers
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+// 4: Body parsers.
+//    `verify` stashes the raw request bytes on req.rawBody so the PayTabs
+//    webhook can recompute the HMAC signature over the EXACT payload (a
+//    re-serialised req.body would not match byte-for-byte). Harmless for
+//    every other route.
+const captureRawBody = (req, res, buf) => {
+  if (buf && buf.length) {
+    req.rawBody = buf;
+  }
+};
+app.use(express.json({ limit: '10mb', verify: captureRawBody }));
+app.use(express.urlencoded({ extended: true, verify: captureRawBody }));
 
 // 5: Request logging
 app.use(requestLogger);

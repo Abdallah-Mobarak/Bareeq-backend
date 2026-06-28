@@ -4,7 +4,7 @@ const validate = require('../../middlewares/validate');
 const requireAuth = require('../../middlewares/requireAuth');
 const requireRole = require('../../middlewares/requireRole');
 const controller = require('./customer-wallet.controller');
-const { transactionsQuerySchema } = require('./customer-wallet.validation');
+const { transactionsQuerySchema, topupSchema } = require('./customer-wallet.validation');
 
 const router = Router();
 
@@ -16,5 +16,6 @@ router.get(
   validate(transactionsQuerySchema, 'query'),
   controller.listTransactions,
 );
+router.post('/topup', validate(topupSchema), controller.createTopup);
 
 module.exports = router;

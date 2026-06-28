@@ -1870,6 +1870,37 @@ model WalletTransaction {
   @@map("wallet_transactions")
 }
 
+/// Tracks a customer wallet top-up through the PayTabs hosted-payment flow.
+/// One row per "Add balance" attempt. The wallet is credited (via a TOPUP
+/// WalletTransaction) only when PayTabs confirms success on the callback —
+/// guarded by `status` so a duplicated callback can never double-credit.
+model WalletTopup {
+  id         String      @id @default(cuid())
+  customerId String      @map("customer_id")
+  amount     Decimal     @db.Decimal(12, 2)
+  currency   String      @default("SAR")
+  status     TopupStatus @default(PENDING)
+
+  /// cart_id sent to PayTabs (also the idempotency key on the callback).
+  cartId String @unique @map("cart_id")
+  /// PayTabs tran_ref — filled after the payment session is created.
+  tranRef    String? @unique @map("tran_ref")
+  paymentUrl String? @map("payment_url")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([customerId])
+  @@index([status])
+  @@map("wallet_topups")
+}
+
+enum TopupStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
 // ============================================
 // WITHDRAWAL REQUESTS — Sprint 4 (FRD §3.5.2)
 // ============================================

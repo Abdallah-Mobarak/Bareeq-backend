@@ -21,6 +21,7 @@ const serviceProviderReviewsRoutes = require('../modules/service-provider-review
 const adminReviewsRoutes = require('../modules/admin-reviews/admin-reviews.routes');
 const notificationsRoutes = require('../modules/notifications/notifications.routes');
 const customerWalletRoutes = require('../modules/customer-wallet/customer-wallet.routes');
+const payTabsWebhookRoutes = require('../modules/paytabs-webhook/paytabs-webhook.routes');
 const serviceProviderWalletRoutes = require('../modules/service-provider-wallet/service-provider-wallet.routes');
 const adminWalletsRoutes = require('../modules/admin-wallets/admin-wallets.routes');
 const serviceProviderWithdrawalsRoutes = require('../modules/service-provider-withdrawals/service-provider-withdrawals.routes');
@@ -102,6 +103,8 @@ router.use('/service-provider/reviews', serviceProviderReviewsRoutes);
 router.use('/admin/reviews', adminReviewsRoutes);
 router.use('/notifications', notificationsRoutes);
 router.use('/customer/wallet', customerWalletRoutes);
+// Public PayTabs callbacks (no auth — verified by HMAC signature).
+router.use('/payments/paytabs', payTabsWebhookRoutes);
 router.use('/service-provider/wallet', serviceProviderWalletRoutes);
 router.use('/admin/wallets', adminWalletsRoutes);
 router.use('/service-provider/withdrawals', serviceProviderWithdrawalsRoutes);
